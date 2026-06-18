@@ -293,9 +293,9 @@ This is the instrument a Tier 1/Tier 2 analyst actually works inside: multiple d
 
 ## HUMINT to SOC Translation
 
-The throughline of this entire build was a single instinct from twenty years of source work: **verify access before you trust the take.** It showed up as the tcpdump that proved the sensor could see before I built on it, as walking the dead Wazuh pipe one link at a time, as confirming a forwarder was *sending* and not just *connected*, and as checking the live CIM spec instead of trusting my own notes.
+The throughline of this entire build was a single instinct from twenty years of source work: **verify before you trust.** It showed up as the tcpdump that proved the sensor could see before I built on it, as walking the dead Wazuh pipe one link at a time, as confirming a forwarder was *sending* and not just *connected*, and as checking the live CIM spec instead of trusting my own notes.
 
-The other transfer was decision discipline — deferring MDE cleanly the moment it stopped being load-bearing, instead of grinding on a blocked avenue out of commitment. Knowing when to reroute without losing the objective is the same muscle in elicitation and in lab-building. And the detection philosophy I keep circling — that signatures catch the loud and the lazy, while the careful adversary only shows up in the *pattern over time* — is exactly how you run a source you can't catch in any single meeting. The tooling is new. The way of thinking is not, and it's the part that doesn't show up on a certificate.
+The other transfer was decision discipline — deferring MDE cleanly the moment it stopped being load-bearing, instead of grinding on a blocked avenue out of commitment. Knowing when to reroute without losing the objective is the same muscle in elicitation and in lab-building. And the detection philosophy I keep circling — that signatures catch the loud and the lazy, while the careful adversary only shows up in the *pattern over time*. The tooling is new. The way of thinking is not, and that part that doesn't show up on a certificate.
 
 ---
 
