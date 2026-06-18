@@ -53,7 +53,7 @@ Seven VMs running concurrently on a single host (Ryzen 9 9950X / 64GB DDR5), all
 | Kali-AttackBox | Attack simulation | 10.10.10.128 | 4GB | 2 |
 | WazuhServer-SIEM01 | SIEM #1 / XDR | 10.10.10.130 | 8GB | 4 |
 | Win11-Victim01 | Windows endpoint (`DESKTOP-6H1BPIU`) | 10.10.10.131 | 6GB | 2 |
-| Ubuntu-Victim02 | Linux endpoint | 10.10.10.132 | 2GB | 2 |
+| Ubuntu-Victim02 | Linux endpoint | 10.10.10.133 | 2GB | 2 |
 | WinServer-DC01 | Domain controller (`WIN-CBG93HEA6LI`) | 10.10.10.134 | 4GB | 2 |
 | Splunk-SIEM02 | SIEM #2 | 10.10.10.137 | 8GB | 4 |
 | Suricata-Sensor01 | Passive network IDS | 10.10.10.140 | 4GB | 2 |
@@ -235,7 +235,7 @@ Root cause: the **Splunk Common Information Model Add-on** — the base package 
 | Kali-AttackBox | 10.10.10.128 | — | — | — | No |
 | WazuhServer-SIEM01 | 10.10.10.130 | *(self)* | — | — | No |
 | Win11-Victim01 | 10.10.10.131 | Agent | UF (WinEventLog + Sysmon) | Yes | soclab.local |
-| Ubuntu-Victim02 | 10.10.10.132 | Agent | UF (auth.log + syslog) | — | soclab.local |
+| Ubuntu-Victim02 | 10.10.10.133 | Agent | UF (auth.log + syslog) | — | soclab.local |
 | WinServer-DC01 | 10.10.10.134 | Agent | UF (WinEventLog + Sysmon) | Yes | soclab.local |
 | Splunk-SIEM02 | 10.10.10.137 | — | *(self)* | — | No |
 | Suricata-Sensor01 | 10.10.10.140 | Agent (rule 86601) | UF (`suricata:json` → CIM) | — | No |
