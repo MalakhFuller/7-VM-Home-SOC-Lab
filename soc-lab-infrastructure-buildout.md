@@ -253,13 +253,13 @@ Root cause: the **Splunk Common Information Model Add-on** — the base package 
 **Final verification:**
 
 ```
-| datamodel Intrusion_Detection IDS_Attacks search | stats count
+| datamodel Intrusion_Detection IDS_Attacks flat
 ```
 
-**104 events.** And a flat search now showed the data-model-generated fields (`is_Network_IDS_Attacks` and friends) attached to my Suricata events — the model *claiming* them as its own. Suricata is now a first-class CIM citizen in Splunk: any CIM-aware search, dashboard, or correlation rule sees its detections automatically, no special-casing. That's the difference between data being present and data being usable.
+This pulls the events back *through* the data model — and they return carrying the data-model-generated fields (`is_Network_IDS_Attacks` and friends) right alongside the normalized `src`/`dest`/`signature`/`severity`/`action`, the model *claiming* them as its own. Suricata is now a first-class CIM citizen in Splunk: any CIM-aware search, dashboard, or correlation rule sees its detections automatically, no special-casing. That's the difference between data being present and data being usable.
 
 ![Suricata events in the CIM Intrusion Detection data model](screenshots/15_Suricata%20CIM%20running%20and%20functional.jpg)
-*The payoff: `| datamodel Intrusion_Detection IDS_Attacks flat` returns Suricata events carrying the data-model-generated fields (`is_Network_IDS_Attacks` and its siblings), alongside the normalized `src`/`dest`/`signature`/`severity`/`action`. The Intrusion Detection model now claims the sensor's detections as its own — fully normalized, no special-casing.*
+*The payoff: `| datamodel Intrusion_Detection IDS_Attacks flat` returns Suricata events through the data model, each carrying the model's own `is_Network_IDS_Attacks` fields alongside the normalized `src`/`dest`/`signature`/`severity`/`action`. (Output capped to a sample with `head 5`.)*
 
 ---
 
