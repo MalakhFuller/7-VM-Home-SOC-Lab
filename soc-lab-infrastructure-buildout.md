@@ -67,7 +67,7 @@ Seven VMs running concurrently on a single host (Ryzen 9 9950X / 64GB DDR5), all
 | VMnet2 | SOC internal — all VMs, fully isolated | 10.10.10.0/24 |
 | VMnet8 (NAT) | Temporary internet, removed/toggled after installs | 192.168.x.x/24 |
 
-Everything lives on the isolated `VMnet2` segment. The two infrastructure boxes that need to pull updates from the internet — Splunk and the Suricata sensor — are **deliberately dual-homed** (a second NAT adapter) rather than the whole lab being given internet. That's a conscious trade: a dual-homed box bridges the isolated network to the outside, so I kept the bridge on the SIEM/sensor (saner places to allow internet) and off the victims and the attacker box. The NAT adapters are toggleable if I want pure isolation for a given attack scenario later.
+Everything lives on the isolated `VMnet2` segment. The two infrastructure boxes that need to pull updates from the internet — Splunk and the Suricata sensor — are **deliberately dual-homed** (a second NAT adapter) rather than giving the whole lab internet. That's a conscious trade: a dual-homed box bridges the isolated network to the outside, so I kept the bridge on the SIEM/sensor (saner places to allow internet) and off the victims and the attacker box. The NAT adapters are toggleable if I want pure isolation for a given attack scenario later.
 
 ---
 
@@ -95,7 +95,7 @@ The plan opened with Microsoft Defender for Endpoint: deploy it across the lab a
 - The trial demanded a credit card even at $0. Plan was: enter card, immediately kill auto-renew.
 - The order tripped a **fraud hold (error 43881)** and the billing account came back **Disabled**. A brand-new account instantly buying enterprise security licensing looks exactly like fraud to an automated risk engine, so it got kicked to a human review on Microsoft's clock — hours to days.
 
-So I made a call: **defer MDE, don't grind on it.** It threw two hard gates and produced zero hands-on learning, and it wasn't load-bearing for anything downstream — it was first on the list only because of how I'd ordered things. Meanwhile every other tool in the plan installs locally with none of that friction. The tenant stays parked (no charge, billing never activated) and is reusable later for Microsoft Sentinel if I go that way. The evening wasn't wasted; I stood up a tenant I can repurpose, and I pivoted to the tool recruiters actually ask about: Splunk.
+So I made a call: **defer MDE, don't grind on it.** It threw up two hard gates and produced zero hands-on learning, and it wasn't load-bearing for anything downstream — it was first on the list only because of how I'd ordered things. Meanwhile every other tool in the plan installs locally with none of that friction. The tenant stays parked (no charge, billing never activated) and is reusable later for Microsoft Sentinel if I go that way. The evening wasn't wasted; I stood up a tenant I can repurpose, and I pivoted to the tool recruiters actually ask about: Splunk.
 
 That decision discipline is the same muscle as the field work I came from — you read where the resistance is, decide whether the objective actually depends on this avenue, and reroute without losing the goal. Knowing when to abandon a line of effort cleanly is its own skill.
 
@@ -172,11 +172,11 @@ sudo tcpdump -i ens33 -n 'icmp and not host 10.10.10.140'
 
 That filter is deliberate — ICMP only, and explicitly *not* anything to or from the sensor itself, so anything that appears is by definition a conversation between two *other* machines I have no business overhearing. Then from Kali I pinged the Splunk box, and there it was on the sensor: ICMP between two hosts that aren't me. Proof. The vSwitch is flooding unicast to my promiscuous port — the software equivalent of a SPAN/mirror port on physical gear, handed over for free.
 
-One honest stumble: my *first* ping test targeted a box that turned out to be powered off, got nothing, and for a second I thought the sensor was broken. It wasn't — "host unreachable" was an ARP failure (the target never answered), not a sniffing failure. The lesson is the old one in new clothes: **when collection comes up empty, confirm the source was actually transmitting before you tear apart the collector.**
+One honest stumble: my *first* ping test targeted a box that turned out to be powered off and got nothing back — and for a second I thought the sensor was broken. It wasn't — "host unreachable" was an ARP failure (the target never answered), not a sniffing failure. The lesson is the old one in new clothes: **when collection comes up empty, confirm the source was actually transmitting before you tear apart the collector.**
 
 **The two config lines that count.** Pulled Suricata from the OISF stable PPA to get 8.0.x, backed up the config, and made two edits that did the real work:
 
-- **`HOME_NET = [10.10.10.0/24]`** — how Suricata knows "inside" from "outside." A huge number of rules are directional (external host probing internal = attack; the reverse may be nothing). Get HOME_NET wrong and the directional logic is wrong and rules silently misfire. Defining "us" correctly is the whole foundation. (You can't model a threat to an organization until you've correctly drawn the boundary of the organization.)
+- **`HOME_NET = [10.10.10.0/24]`** — how Suricata knows "inside" from "outside." A huge number of rules are directional (external host probing internal = attack; the reverse may be nothing). Get HOME_NET wrong and the directional logic inverts — rules silently misfire. Defining "us" correctly is the whole foundation. (You can't model a threat to an organization until you've correctly drawn the boundary of the organization.)
 - **af-packet interface `eth0` → `ens33`** — the default sniffs an interface name that doesn't exist on modern Ubuntu. Point it at the NIC I'd *verified* sees traffic.
 
 `suricata-update` pulled the ET Open ruleset (**50,750 rules, 0 failed**), and `suricata -T` came back clean — meaning all 50k rules parsed and the config is sane *before* committing to a live run.
@@ -206,7 +206,7 @@ I did the boring check first this time (burned by an assumption the night before
 ![Four Wazuh agents active](screenshots/13_Suricata%20wazuh%20agent%20active.jpg)
 *The Wazuh fleet, now four agents: the two Windows boxes, the Ubuntu endpoint (`10.10.10.133`), and the Suricata sensor as 004 (`10.10.10.140`) — all `active`, all on 4.14.5. The sensor joined the same SIEM the endpoints already report to.*
 
-One thing in the startup log nearly gave me a heart attack: right after "Connected to the server," a wall of `SIGNAL [(15)-(Terminated)]` and `Shutdown received` lines that read like the agent face-planting on arrival. It wasn't. The line *above* was the tell — *"Agent is reloading due to shared configuration changes."* The moment it connected, the manager pushed its central config and the agent restarted its internals to apply it. A reboot, not a death. **Read the line above the scary part before you panic.**
+One thing in the startup log nearly gave me a heart attack: right after "Connected to the server," a wall of `SIGNAL [(15)-(Terminated)]` and `Shutdown received` lines that read like the agent face-planted on arrival. It didn't, though. The line *above* was the tell — *"Agent is reloading due to shared configuration changes."* The moment it connected, the manager pushed its central config and the agent restarted its internals to apply it. A reboot, not a death. **Read the line above the scary part before you panic.**
 
 Then I pointed the agent at `eve.json`, dropped the `wazuh` user into the `suricata` group (same door-traversal gate as the Splunk side), confirmed the group took, and felt good about myself. Fired a test nmap from Kali. Came back to the manager.
 
@@ -244,7 +244,7 @@ At this point Suricata's alerts were searchable in Splunk, but they were *un-nor
 - **`eventtypes.conf` + `tags.conf`** — defined an eventtype (`suricata_attack`) and tagged it `ids` + `attack`, which is literally how the data model finds these events.
 - **`metadata/default.meta`** — with `export = system`. This one mattered more than it looks: the data model runs in a *different app context*, so without a global export it can't see my objects at all.
 
-I verified the CIM spec live rather than from memory — fetched Splunk's own Intrusion Detection data model docs to confirm the dataset name (`IDS_Attacks`), the required tags, and the prescribed field values (`action` = allowed/blocked, `severity` = critical/high/medium/low/informational, `transport` lowercase). Building to a remembered spec is how you build something that's subtly wrong.
+I verified the CIM spec live rather than from memory — fetched Splunk's own Intrusion Detection data model docs to confirm the dataset name (`IDS_Attacks`), the required tags, and the prescribed field values (`action` = allowed/blocked, `severity` = critical/high/medium/low/informational, `transport` lowercase). Working from a remembered spec is how you build something subtly wrong.
 
 **The gut-punch.** Restarted, ran the check — `| datamodel Intrusion_Detection IDS_Attacks search` — and got **"data model not found."** Not "no results." *Not found.* My first instinct was that I'd broken my add-on. So I split the question in two: was it my *field mapping* that failed, or the *data model* itself? A flat search proved my props were working perfectly — every CIM field was populating correctly. So the mapping was fine. The data model itself didn't exist.
 
@@ -336,7 +336,7 @@ The other transfer was decision discipline — deferring MDE cleanly the moment 
 
 ## What's Next
 
-The infrastructure is built and verified. The next project puts it to work — moving from "I built the instrument" to "I used it."
+The infrastructure is built and verified. The next phase puts it to work — moving from "I built the instrument" to "I used it."
 
 The immediate next step is populating Active Directory for realistic attacks: creating test users and at least one **Kerberoastable service account** (an SPN-registered account with a deliberately weak password — a vanilla domain has nothing to roast), then confirming the DC's audit policy actually generates the telemetry the attacks should produce (4625 for password spray, 4768/4769 for Kerberos activity). From there, with a pre-attack snapshot taken, the work becomes adversarial:
 
