@@ -4,7 +4,7 @@ If you've scrolled through a few home-lab repos, you know the genre: a clean Waz
 
 That's not this repo. This is the version with the dead ends left in.
 
-I'm a career-changer moving into detection and SOC work after about twenty years in HUMINT/human intelligence driven competitive intelligence work. So I'll be straight about where I stand: I'm genuinely new to the tooling, but I'm not new to the *thinking*. The instinct to verify access before you trust the take, to take a broken chain apart one link at a time, to decide an avenue isn't worth grinding on and reroute cleanly — that part isn't new. That's the job I already had, pointed at a different target. This lab is where I'm welding the two together, and writing down every place the weld didn't hold the first time.
+I'm a career-changer moving into detection and SOC work after about twenty years in HUMINT/human intelligence driven competitive intelligence work. So I'll be straight about where I stand: I'm genuinely new to the tooling, but I'm not new to the *thinking*. The instinct to verify before you trust, to take a broken chain apart one link at a time, to decide an avenue isn't worth grinding on and reroute cleanly — that part isn't new. That's the job I already had, pointed at a different target. This lab is where I'm welding the two together, and writing down every place the weld didn't hold the first time.
 
 ---
 
