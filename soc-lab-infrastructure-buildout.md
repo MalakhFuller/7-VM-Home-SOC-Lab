@@ -81,8 +81,6 @@ A few things from that foundation are worth carrying forward because they bit me
 - **Linux can join a Windows AD domain** (`realmd` + `sssd` stack), but the join fails until you point the Linux box's DNS resolver at the domain controller. In a mixed-OS environment, DNS is the foundation everything else stands on.
 - **Wazuh starts detecting vulnerabilities the moment an agent connects** — 13 CVEs surfaced on the Windows endpoint within minutes, zero config. And **Sysmon flags all your own admin activity as suspicious**, which was my first real lesson in false positives: the same alerts that fire on legitimate setup work will fire on a real attack, and telling them apart is the actual job.
 
-<img width="2407" height="402" alt="Three Wazuh agents active" src="https://github.com/user-attachments/assets/36781fc0-561c-4c84-97a4-2cef24100220" />
-
 With that foundation live, Phase 2 begins.
 
 ---
@@ -133,19 +131,19 @@ Getting Universal Forwarders onto all three endpoints (the DC, Win11, Ubuntu) wa
 
 **The host-name lesson (bit me three times).** Every time I searched for data by the name I'd given the VM — `WinServer-DC01`, `Win11-Victim01` — I got nothing, and briefly thought the forward was broken. It wasn't. **Splunk's `host` field is the machine's real computer name, not the VMware label.** Both Windows boxes carried throwaway auto-generated names (`WIN-CBG93HEA6LI`, `DESKTOP-6H1BPIU`) that I'd never renamed. The fix each time: drop the host filter, read the `host` facet in `index=_internal`, and there the box was, already sending. `hostname` is ground truth; the VM label is a sticky note.
 
-![Splunk search showing the DC's real host name](screenshots/06_Splunk_is_configured_and_working_as_planned.jpg)
+![Splunk search showing the DC's real host name](screenshots/06_Splunk%20is%20configured%20and%20working%20as%20planned.jpg)
 *Searching `index=* host=WIN-CBG93HEA6LI` — the DC's auto-generated computer name, not its VM label — returns 2,088 events. The machine was never renamed at promotion; Splunk's `host` field is the real computer name.*
 
 **"Connected isn't sending."** On the DC, `splunk list forward-server` showed an active forward, but searches returned nothing. An active forward means the *pipe is open*, not that data is *flowing*. The forwarder was reaching Splunk (`index=_internal` proved it — thousands of the forwarder's own health logs), but the inputs that decide *what* to send weren't all configured. I diagnosed it by eliminating in order: destination (read `outputs.conf` directly) → connection (`_internal` events) → inputs (`inputs.conf`). Each check kills a branch instead of guessing.
 
-![Indexer listening on port 9997](screenshots/04_Splunk_is_listening.jpg)
+![Indexer listening on port 9997](screenshots/04_Splunk%20is%20listening.jpg)
 *Verifying below the UI: `ss -tlnp | grep 9997` shows `splunkd` listening on `0.0.0.0:9997` — open on all interfaces, so forwarders on VMnet2 can reach it. The dashboard says "saved"; the OS confirms "actually listening." Two different things.*
 
-<!-- OPTIONAL (03): the Splunk UI "Receive data" page confirming port 9997 enabled — ![Receiving enabled](screenshots/03_Splunk_listening_on_Port_9997.jpg) -->
+<!-- OPTIONAL (03): the Splunk UI "Receive data" page confirming port 9997 enabled — ![Receiving enabled](screenshots/03_Splunk%20listening%20on%20Port%209997.jpg) -->
 
 **Sysmon needs a manual input.** The install wizard configures standard Windows Event Logs but never picks up Sysmon — it writes to its own dedicated channel. I added the stanza by hand to `inputs.conf` with `renderXml = true` (the format the supported add-on parses cleanly), and verified the file landed at the right path with `Get-Content` so Notepad couldn't sneak a `.txt` on the end.
 
-![Sysmon telemetry parsed in Splunk](screenshots/07_Windows_Sysmon_money_shot.jpg)
+![Sysmon telemetry parsed in Splunk](screenshots/07_Windows%20Sysmon%20money%20shot.jpg)
 *243 Sysmon events from the DC, parsed by the add-on into the fields that matter for detection — `CommandLine`, `Image`, `ParentImage`, `Hashes`, `IMPHASH`, `IntegrityLevel`. This is the deep endpoint telemetry that makes detection work possible.*
 
 **Protected vs. normal log channels.** On Win11, Application and System logs flowed but Security and Sysmon didn't. The tell: those two are *protected* channels, and the forwarder was running under a restricted virtual account that can read normal logs but not protected ones. I switched the service to **LocalSystem** and they appeared. (Production note: the least-privilege route is adding the service account to the *Event Log Readers* group rather than granting full LocalSystem.)
@@ -156,8 +154,8 @@ I also installed the parsing add-ons (**Splunk Add-on for Microsoft Windows**, *
 
 All three endpoints now feed **both** SIEMs. The endpoint layer of the dual-SIEM is complete.
 
-<!-- OPTIONAL (05): Splunkbase add-ons installed (Sysmon 5.0.0 + Microsoft Windows 10.0.1, both Global/Enabled) — ![Parsing add-ons](screenshots/05_Splunk_parsing_layer_in_place.jpg) -->
-<!-- OPTIONAL (08): Splunk indexer boot-start (systemctl status Splunkd, enabled + active, owned by splunk) — ![Splunk boot-start](screenshots/08_Splunk_enabled_active_running_systemd_autostart_on_boot.jpg) -->
+<!-- OPTIONAL (05): Splunkbase add-ons installed (Sysmon 5.0.0 + Microsoft Windows 10.0.1, both Global/Enabled) — ![Parsing add-ons](screenshots/05_Splunk%20parsing%20layer%20in%20place.jpg) -->
+<!-- OPTIONAL (08): Splunk indexer boot-start (systemctl status Splunkd, enabled + active, owned by splunk) — ![Splunk boot-start](screenshots/08_Splunk%20enabled%20active%20running%20systemd%20autostart%20on%20boot.jpg) -->
 <!-- OPTIONAL (09): Ubuntu forwarder boot-start, showing the splunkfwd least-privilege account — ![Ubuntu forwarder](screenshots/09_UbuntuVictom02_AgentActiveRunning.jpg) — promote this one to a live image if your audience is hands-on SOC managers; it shows least-privilege + persistence in one frame -->
 
 ### 4. A passive sensor on the wire — proving the wire before trusting it
@@ -188,14 +186,14 @@ One honest stumble: my *first* ping test targeted a box that turned out to be po
 
 **First blood.** Started the service (unprivileged `suricata` user, boot-start on), then poked it on purpose from Kali: `nmap -A -Pn` against the DC. `fast.log` lit up — **ET SCAN Possible Nmap User-Agent Observed**, Kali → the DC's WinRM port, caught red-handed. The full chain proven end-to-end: attack leaves Kali → crosses VMnet2 → `ens33` sees the copy → Suricata matches → alert written. Every link mine, verified, not assumed.
 
-![Suricata first detection in fast.log](screenshots/11_Suricata_working_end_to_end.jpg)
+![Suricata first detection in fast.log](screenshots/11_Suricata%20working%20end%20to%20end.jpg)
 *First blood: `fast.log` catches the scan — ET SCAN Possible Nmap User-Agent Observed, `10.10.10.128` (Kali) → `10.10.10.134:5985` (the DC's WinRM port), Priority 1. The sensor saw a conversation it wasn't part of and named the tool that made it.*
 
 The caveat I want to stay honest about: `-A` tripped that signature *because* it's loud — it waves an nmap user-agent string around. A patient operator who slowed down wouldn't trip that rule at all. Signatures catch the loud and the lazy; the quiet professional is a behavioral problem you find by what's anomalous over time, not by a string match. That's the detection I actually care about building later — and it's the same instinct as the source work: the careful adversary doesn't show up in any single document, he shows up in the pattern.
 
 **The permission lesson, carved into the wall.** Shipping Suricata to Splunk meant a fourth forwarder install, and I front-loaded the permission fix this time: added `splunkfwd` to the `suricata` group. Here's the part worth keeping — `eve.json` itself is `644`, world-readable, so on paper anyone can read it. But the *directory* it lives in is `770`. **You can't read a file inside a directory you're not allowed to traverse.** The directory is the real gate, not the file. World-readable means nothing if you can't walk in the door.
 
-<!-- OPTIONAL (12): Suricata's Splunk forwarder boot-start (systemctl status, enabled + active, splunkfwd account) — ![Suricata forwarder boot-start](screenshots/12_Suricta_built-proven-persistent.jpg) -->
+<!-- OPTIONAL (12): Suricata's Splunk forwarder boot-start (systemctl status, enabled + active, splunkfwd account) — ![Suricata forwarder boot-start](screenshots/12_Suricta%20built-proven-persistent.jpg) -->
 
 **The time-vs-time gotcha.** Suricata's events landed in Splunk and auto-extracted into fields, but a search for the nmap detections returned *zero* — which made no sense, because I'd just watched them fire. The trap: **event time vs. index time.** Splunk timestamps each event by when *Suricata logged it*, not when it arrived. The scan had happened earlier, so the events landed at their *original* time, outside my "last 60 minutes" window. The data was never missing — I was standing in the wrong moment. Widened the range and 37 detections appeared, fully parsed. The reflex to keep: an empty SIEM search when you *know* the event happened means **check your time range first.**
 
@@ -205,7 +203,7 @@ The sensor was feeding Splunk. I wanted it feeding Wazuh too, so both tools watc
 
 I did the boring check first this time (burned by an assumption the night before): pinged the manager, poked the two ports the agent needs — **1515** (first handshake, gets issued a key) and **1514** (ships events after). All open. The Wazuh dashboard generated a version-pinned install command (a mismatched agent and manager is a classic way to create a problem you'll never think to look for later), and the agent enrolled clean — agent 004, *Active*.
 
-![Four Wazuh agents active](screenshots/13_Suricata_wazuh_agent_active.jpg)
+![Four Wazuh agents active](screenshots/13_Suricata%20wazuh%20agent%20active.jpg)
 *The Wazuh fleet, now four agents: the two Windows boxes, the Ubuntu endpoint (`10.10.10.133`), and the Suricata sensor as 004 (`10.10.10.140`) — all `active`, all on 4.14.5. The sensor joined the same SIEM the endpoints already report to.*
 
 One thing in the startup log nearly gave me a heart attack: right after "Connected to the server," a wall of `SIGNAL [(15)-(Terminated)]` and `Shutdown received` lines that read like the agent face-planting on arrival. It wasn't. The line *above* was the tell — *"Agent is reloading due to shared configuration changes."* The moment it connected, the manager pushed its central config and the agent restarted its internals to apply it. A reboot, not a death. **Read the line above the scary part before you panic.**
@@ -231,7 +229,7 @@ Rule: 86601 (level 3) -> 'Suricata: Alert - ET SCAN Possible Nmap User-Agent Obs
 
 There it was. Wazuh's own built-in Suricata rule firing on my sensor's detection with no custom rule-writing from me — fully decoded, Kali to the DC's WinRM port, the nmap user-agent sitting in the data confessing. The same detection now living in *both* SIEMs. The sensor finally had two sets of eyes.
 
-![Wazuh rule 86601 firing on the Suricata detection](screenshots/14_suricata_working_end_to_end.jpg)
+![Wazuh rule 86601 firing on the Suricata detection](screenshots/14_suricata%20working%20end%20to%20end.jpg)
 *The same detection, now in the second SIEM. A static `grep` of the manager's alert log finds Wazuh rule 86601 — "Suricata: Alert - ET SCAN Possible Nmap User-Agent Observed" — fully decoded, Kali → the DC's WinRM port, the nmap user-agent string sitting right there in the event. No custom rule-writing required; Wazuh ships the Suricata decoders built in.*
 
 The install was easy and I've half-forgotten it already. Chasing the dead pipe back to the one line that mattered is the part that stuck.
@@ -260,7 +258,7 @@ Root cause: the **Splunk Common Information Model Add-on** — the base package 
 
 **104 events.** And a flat search now showed the data-model-generated fields (`is_Network_IDS_Attacks` and friends) attached to my Suricata events — the model *claiming* them as its own. Suricata is now a first-class CIM citizen in Splunk: any CIM-aware search, dashboard, or correlation rule sees its detections automatically, no special-casing. That's the difference between data being present and data being usable.
 
-![Suricata events in the CIM Intrusion Detection data model](screenshots/15_Suricata_CIM_running_and_functional.jpg)
+![Suricata events in the CIM Intrusion Detection data model](screenshots/15_Suricata%20CIM%20running%20and%20functional.jpg)
 *The payoff: `| datamodel Intrusion_Detection IDS_Attacks flat` returns Suricata events carrying the data-model-generated fields (`is_Network_IDS_Attacks` and its siblings), alongside the normalized `src`/`dest`/`signature`/`severity`/`action`. The Intrusion Detection model now claims the sensor's detections as its own — fully normalized, no special-casing.*
 
 ---
