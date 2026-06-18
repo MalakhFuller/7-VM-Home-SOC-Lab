@@ -21,7 +21,7 @@ The whole thing is the instrument. The *next* project is me attacking it.
 | Kali-AttackBox | Attack simulation | 10.10.10.128 |
 | WazuhServer-SIEM01 | SIEM #1 / XDR (Wazuh 4.14) | 10.10.10.130 |
 | Win11-Victim01 | Windows endpoint + Sysmon | 10.10.10.131 |
-| Ubuntu-Victim02 | Linux endpoint | 10.10.10.132 |
+| Ubuntu-Victim02 | Linux endpoint | 10.10.10.133 |
 | WinServer-DC01 | Domain controller (`soclab.local`) | 10.10.10.134 |
 | Splunk-SIEM02 | SIEM #2 (Splunk Enterprise) | 10.10.10.137 |
 | Suricata-Sensor01 | Passive network IDS | 10.10.10.140 |
