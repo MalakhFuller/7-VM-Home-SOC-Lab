@@ -8,7 +8,7 @@
 
 > **How to read this:** This is the honest version. Where I hit a wall, took a wrong turn, or assumed something was working when it wasn't, that's in here on purpose. A writeup where everything works the first time is a writeup where nothing was actually learned. The dead ends *are* the experience — they're the part I can defend in an interview, because I lived them.
 
-> **On AI:** I used Claude as a research partner in this lab build to pressure-test my reasoning and rapidly turn lengthy session notes into clean prose. AI accelerated the work without question. That said: every command was one I ran, every wall was one I hit myself, and every claim made here I can defend with the tab closed. I would still have achieved every objective without AI. It would have simply taken a far longer time horizon. If a tool lets me finish in three hours what might otherwise take three weeks of trawling forum threads, I'd be silly not to use it. Both paths succeed — but in a field where the offensive and defensive ground shifts weekly, that efficiency can make all the difference. 
+> **On AI:** I used Claude as a research partner in this lab build — to pressure-test my reasoning and rapidly turn lengthy session notes into clean prose. AI accelerated the work without question. That said: every command was one I ran, every wall was one I hit myself, and every claim made here I can defend with the tab closed. I would still have achieved every objective without AI. It would have simply taken a far longer time horizon. If a tool lets me finish in three hours what might otherwise take three weeks of trawling forum threads, I'd be silly not to use it. Both paths succeed — but in a field where the offensive and defensive ground shifts weekly, that efficiency can make all the difference. Or, to put it in relatable real-world terms: a carpenter who refuses to use power tools can still build things, but it'll take a lot longer — and not many people will want to hire them.
 
 ---
 
@@ -81,7 +81,7 @@ A few things from that foundation are worth carrying forward because they bit me
 
 - **VMware custom networks don't appear in the VM adapter dropdown** until you check *"Connect a host virtual adapter to this network"* in the Virtual Network Editor. The networks exist on paper but the VMs can't select them. Pure troubleshooting to discover — it's documented nowhere obvious.
 - **Linux can join a Windows AD domain** (`realmd` + `sssd` stack), but the join fails until you point the Linux box's DNS resolver at the domain controller. In a mixed-OS environment, DNS is the foundation everything else stands on.
-- **Wazuh starts detecting vulnerabilities the moment an agent connects** — 13 CVEs surfaced on the Windows endpoint within minutes, zero config. And **Sysmon flags all your own admin activity as suspicious**, which was my first real lesson in false positives: the same alerts that fire on legitimate setup work will fire on a real attack, and telling them apart is the actual job.
+- **Wazuh starts detecting vulnerabilities the moment an agent connects** — 7 CVEs surfaced on the Windows endpoint within minutes, zero config. And **Sysmon flags all your own admin activity as suspicious**, which was my first real lesson in false positives: the same alerts that fire on legitimate setup work will fire on a real attack, and telling them apart is the actual job.
 
 With that foundation live, Phase 2 begins.
 
@@ -330,7 +330,7 @@ This is the instrument a Tier 1/Tier 2 analyst actually works inside: multiple d
 
 ## Competitive Intelligence to SOC Translation
 
-For twenty years before this I worked in competitive intelligence as an analyst and client-facing consultant. The internal job was directing researchers who got people talking, then doing the harder part: reviewing what came back, leaning on anything that didn't add up, and getting a claim confirmed a second and third way before I'd build it into a picture executives would act on. None of that is technical. All of it transferred.
+For twenty years before this I worked in competitive intelligence as an analyst and client-facing consultant. The internal job was directing researchers who got people on the phone talking, then doing the harder part: reviewing what came back, leaning on anything that didn't add up, and getting a claim confirmed a second and third way before I'd build it into a picture executives would act on. None of that is technical. All of it transferred.
 
 The throughline of this entire build was the core habit of that work: **don't trust a link you haven't personally checked.** It showed up as the tcpdump that proved the sensor could see before I built on it, as walking the dead Wazuh pipe one hop at a time, as confirming a forwarder was *sending* and not just *connected*, and as checking the live CIM spec instead of trusting my own notes. Corroborate first, then bank it — the same discipline as never briefing a fact I'd only heard from one source.
 
@@ -338,11 +338,59 @@ The other transfer was decision discipline — deferring MDE the moment it stopp
 
 ---
 
+## The Baseline — Proving the Apparatus Records "Normal" Before I Attack It
+
+With the dual-SIEM standing and Suricata on the wire, the obvious move was to start throwing attacks at the thing. I didn't. There's a failure mode I wanted to stay out of: run an attack, see an alert, and quietly *assume* the alert means what I think it means — without ever having watched the same plumbing carry an event I fully understood first. A detection you've only ever seen fire on an attack is a detection you can't actually vouch for. So before the first shot, I built a target, generated one harmless event, and chased it through every layer of the stack to prove the apparatus could see *normal* — and prove it more than once. That "more than once" is the whole point, and I'll come back to why.
+
+### The paradox I had to think my way out of first
+
+The events I'll eventually hunt — 4625 for a password spray, 4768/4769 for Kerberos — *sound* like "attack events." They aren't. They're ordinary authentication. A 4769 fires every time anyone, anywhere on the domain, asks for a service ticket. A 4625 fires when anyone fat-fingers a password. An attack doesn't invent a new event; it just generates the *ordinary* ones in unusual volume, or with a tell. Which means I can confirm the telemetry for an attack I haven't run yet by generating a single *benign* instance of the very same event and watching it land. The pipeline doesn't know — or care — whether the hand on the keyboard is hostile. It just carries the record. Once that clicked, the whole "how do I test this without attacking?" knot untied itself.
+
+### Building a target, and a surprise about its locks
+
+A Kerberoast needs a service account with a Service Principal Name attached, so I made one: `svc_sql`, dropped in the `DomainUsers` OU, with a deliberately guessable-but-complexity-passing password (`Summer2024!`) and an SPN registered (`MSSQLSvc/sql01.soclab.local:1433`). There is no SQL server at that address, and there doesn't need to be — the KDC issues a ticket because the SPN *exists* on the account, not because anything is listening. The SPN is just a name that makes the account requestable.
+
+Then I requested one service ticket for it by hand and read the event back, and the box taught me something I'd have gotten wrong on a quiz. I expected the ticket to come back **AES** — the modern, strong default. It came back **RC4 (`0x17`)**. The reason is the entire engine of Kerberoasting: `svc_sql` is a plain user account with an SPN and no encryption-type enforcement set on it, so the KDC fell back to issuing an RC4 service ticket — even though the account *had* AES keys available. The neighboring machine account, by contrast, got AES. RC4 service tickets are derived from the account's password hash and crack *enormously* faster offline than AES, which is exactly why attackers hunt for user-accounts-with-SPNs in the first place. I didn't have to weaken anything. The default configuration handed me the vulnerability, faithfully reproducing the real-world weakness by accident of its own settings.
+
+### A gap in the recording
+
+Confirming telemetry means two separate things: that the DC is *configured* to log the events, and that the events actually *flow*. The configuration check is just reading the audit policy — no attack required. Reading it is where I found the kind of gap that quietly defeats a real SOC: the DC was auditing Kerberos and credential validation for **Success only**. Failures were off.
+
+For spray detection, that's the worst half to be missing. A password spray is, by definition, a flood of *failures* — one password tried against many accounts. Success-only auditing records the one attempt that eventually works and stays blind to the thousand that came before it. You'd have a record of the break-in and none of the break-in attempt. So I enabled Failure auditing on the Kerberos and credential-validation subcategories and read the policy back to confirm it took. (Worth noting, because it surprised me less than it should have: audit policy is a property of the *machine*, not the account. You set it once and it watches every account, forever — you don't reconfigure it per user. The recording is the camera in the lobby, not a badge issued to each employee.)
+
+### One event, three witnesses
+
+Then the satisfying part. I generated a single benign 4769 — one service-ticket request for `svc_sql` — and went looking for it everywhere it should be.
+
+**Splunk found it because Splunk hoards everything.** It's an index-everything system: the forwarder ships every configured event and Splunk stores all of it, searchable, whether or not anything thinks it's interesting. So my benign request was simply *there*, no rule required.
+
+![Splunk index-everything: the benign service-ticket request is present with no rule required](screenshots/16_Splunk-baseline-normal.jpg)
+*Splunk, index-everything model: the benign 4769 is just sitting in the index — one event, `host = WIN-CBG93HEA6LI`, straight off the wire. Note the metadata trinity at the bottom (host / source / sourcetype): where it came from, which log, and the type that drives field extraction.*
+
+![Splunk expanded fields showing the decoded 4769 with RC4 ticket encryption](screenshots/17_Splunk-baseline-expanded.jpg)
+*The same event, fields parsed out: `EventCode 4769`, `Service_Name svc_sql`, `Ticket_Encryption_Type 0x17` (RC4 — the crackable service ticket, the part that matters) and `Session_Encryption_Type 0x12` (AES — a different layer of the same message, and a red herring for detection). Hold onto that `Request_ticket_hash`.*
+
+**Wazuh found it too — but the other way.** Where Splunk hoards, Wazuh is rule-driven: it surfaces events that trip a *rule* rather than storing everything by default. My benign request did trip one — a built-in rule that classified it as routine logon success at a low severity. Caught, decoded, and correctly treated as nothing to wake anyone over.
+
+![Wazuh Events view showing the same request surfaced by a built-in rule at low severity](screenshots/18_Wazuh-baseline-normal.jpg)
+*Wazuh, rule-driven model: the same request, surfaced because rule `60106 — Windows Logon Success` fired at level 3. The agent is `WinServer-DC01`. That low level is the noise floor — the quiet, benign baseline I'll later have to make my detection rise *above*.*
+
+![Wazuh document details showing decoded fields with a request ticket hash identical to Splunk's](screenshots/19_Wazuh-baseline-expanded.jpg)
+*The byte-level close: `serviceName svc_sql`, `ticketEncryptionType 0x17`, and a `requestTicketHash` — `n1SS3clM5PxfhE3...` — identical to the one Splunk and the DC's own log show. Same event, no daylight. Also note `agent.name: WinServer-DC01`: the very same machine Splunk calls `WIN-CBG93HEA6LI`. One asset, two names, depending on which tool you're standing in — a correlation trap worth knowing before it bites.*
+
+### Why three witnesses, and not one
+
+I could have stopped at the DC's Security log. The event was right there at the source; case closed. I didn't — and the reason is the same corroboration instinct I described above: a single source is a lead, not a finding. You confirm it a second and third way, independent of the first, before you'll put your name on it and let someone act on it.
+
+The byte-perfect match here is that exact discipline, with packets instead of people. The same request ticket hash sits in the DC's log, in Splunk, and in Wazuh — three independent witnesses, one fact, no contradiction between them. That agreement is what lets me trust this baseline later, when an attack makes the same events start to lie. I know what the truth looks like because I confirmed it three ways while nothing was wrong — and that's the only way to recognize a lie later, when something is.
+
+---
+
 ## What's Next
 
-The infrastructure is built and verified. The next phase puts it to work — moving from "I built the instrument" to "I used it."
+The infrastructure is built and as the baseline above just proved, verified down to the byte. The next phase puts it to work: moving from "I built this instrument" to "I built this instrument, and I can play it."
 
-The immediate next step is populating Active Directory for realistic attacks: creating test users and at least one **Kerberoastable service account** (an SPN-registered account with a deliberately weak password — a vanilla domain has nothing to roast), then confirming the DC's audit policy actually generates the telemetry the attacks should produce (4625 for password spray, 4768/4769 for Kerberos activity). From there, with a pre-attack snapshot taken, the work becomes adversarial:
+The target's already staged. `svc_sql` is roastable and sitting on an RC4 ticket, the DC is now logging failures as well as successes, and a pre-attack snapshot is taken — so the work turns adversarial:
 
 - **Password spray** (MITRE T1110.003) — detected across both SIEMs
 - **Kerberoasting** (MITRE T1558.003) — 4769 detection, with logic written in both Wazuh and SPL
@@ -351,6 +399,8 @@ The immediate next step is populating Active Directory for realistic attacks: cr
 - **Full purple-team capstone** — end-to-end attack chain with post-incident forensic investigation and a complete incident report drawing on every telemetry source in this build
 
 That's a separate project, and it's where this lab stops being a thing I built and starts being a thing I can *defend* — attack by attack, detection by detection.
+
+The lab isn't just built — it's proven, and I know precisely what its silence sounds like. That's where the construction ends, and the real work begins.
 
 ---
 
