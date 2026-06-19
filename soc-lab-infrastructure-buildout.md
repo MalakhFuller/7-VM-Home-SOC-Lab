@@ -97,7 +97,7 @@ The plan opened with Microsoft Defender for Endpoint: deploy it across the lab a
 
 So I made a call: **defer MDE, don't grind on it.** It threw up two hard gates and produced zero hands-on learning, and it wasn't load-bearing for anything downstream — it was first on the list only because of how I'd ordered things. Meanwhile every other tool in the plan installs locally with none of that friction. The tenant stays parked (no charge, billing never activated) and is reusable later for Microsoft Sentinel if I go that way. The evening wasn't wasted; I stood up a tenant I can repurpose, and I pivoted to the tool recruiters actually ask about: Splunk.
 
-That decision discipline is the same muscle as the field work I came from — you read where the resistance is, decide whether the objective actually depends on this avenue, and reroute without losing the goal. Knowing when to abandon a line of effort cleanly is its own skill.
+That decision discipline is the same muscle from twenty years in competitive intelligence: when a line of inquiry stops paying out, you don't keep a researcher digging it out of stubbornness — you read where the resistance is, decide whether the objective actually depends on this avenue, and redirect without losing the goal. Knowing when to abandon a line cleanly is its own skill.
 
 ### 2. Standing up Splunk — and a lockout that cost me an evening
 
@@ -160,7 +160,7 @@ All three endpoints now feed **both** SIEMs. The endpoint layer of the dual-SIEM
 
 ### 4. A passive sensor on the wire — proving the wire before trusting it
 
-The hard part of adding Suricata was never going to be installing it; it's a package, it installs. The hard part was the question I spent twenty years asking about human sources and was now asking about a network interface: *can this thing even see what I need it to see?* Positioning is the whole game. A sensor wired to the wrong spot is an expensive way to watch your own reflection. So I didn't start with the tool. I started with the wire.
+The hard part of adding Suricata was never going to be installing it; it's a package, it installs. The hard part was a question I spent twenty years asking in competitive intelligence and was now asking about a network interface: *can this thing actually see what I need it to see?* Positioning is the whole game. It never mattered how good a source was if they weren't positioned to know the thing I needed — and a sensor wired to the wrong spot is the same problem in different clothes: an expensive way to watch your own reflection. So I didn't start with the tool. I started with the wire.
 
 **Passive, not inline.** Two ways to put an IDS in a lab. *Inline* sits in the traffic path — every packet physically passes through it, so it can block (that's IPS), but it becomes a single point of failure and would mean re-plumbing my whole flat segment. *Passive* sits off to the side inspecting a *copy* of the traffic — it can see and alert but not stop. I went passive: it bolts onto the lab I already have without disturbing anything, and if it dies the lab keeps running and I just lose visibility. For a detection-focused build that's the right trade. (Honest read: passive is also the forgiving choice for someone still learning, and I'll take forgiving.)
 
@@ -189,7 +189,7 @@ One honest stumble: my *first* ping test targeted a box that turned out to be po
 ![Suricata first detection in fast.log](screenshots/11_Suricata%20working%20end%20to%20end.jpg)
 *First blood: `fast.log` catches the scan — ET SCAN Possible Nmap User-Agent Observed, `10.10.10.128` (Kali) → `10.10.10.134:5985` (the DC's WinRM port), Priority 1. The sensor saw a conversation it wasn't part of and named the tool that made it.*
 
-The caveat I want to stay honest about: `-A` tripped that signature *because* it's loud — it waves an nmap user-agent string around. A patient operator who slowed down wouldn't trip that rule at all. Signatures catch the loud and the lazy; the quiet professional is a behavioral problem you find by what's anomalous over time, not by a string match. That's the detection I actually care about building later — and it's the same instinct as the source work: the careful adversary doesn't show up in any single document, he shows up in the pattern.
+The caveat I want to stay honest about: `-A` tripped that signature *because* it's loud — it waves an nmap user-agent string around. A patient operator who slowed down wouldn't trip that rule at all. Signatures catch the loud and the lazy; the quiet professional is a behavioral problem you find by what's anomalous over time, not by a string match. That's the detection I actually care about building later — and it's the same instinct competitive intelligence ran on: the real picture rarely shows up in any single source, it shows up in the pattern you assemble across many of them.
 
 **The permission lesson, carved into the wall.** Shipping Suricata to Splunk meant a fourth forwarder install, and I front-loaded the permission fix this time: added `splunkfwd` to the `suricata` group. Here's the part worth keeping — `eve.json` itself is `644`, world-readable, so on paper anyone can read it. But the *directory* it lives in is `770`. **You can't read a file inside a directory you're not allowed to traverse.** The directory is the real gate, not the file. World-readable means nothing if you can't walk in the door.
 
@@ -288,7 +288,7 @@ These are the ones I'll carry into a real SOC, because each cost me something to
 3. **The absence of an error is information.** "Empty, and not even complaining" told me the Wazuh agent wasn't *trying* to read the file — which meant config, not permissions, and pointed straight at the fix.
 4. **Connected ≠ sending.** An open forward only means the pipe exists. Inputs decide whether data flows.
 5. **The host field is the real computer name, not the VM label.** Bit me three times before it stuck. Empty search? Drop the host filter, read the facet.
-6. **Prove the wire before you trust it.** One tcpdump command, run before I built anything, was the foundation the entire Suricata build stood on. Verify access, then bank on the take.
+6. **Prove the wire before you trust it.** One tcpdump command, run before I built anything, was the foundation the entire Suricata build stood on. Confirm a thing can actually see before you trust what it reports.
 7. **The directory is the gate, not the file.** A world-readable file inside a `770` directory is unreadable to anyone who can't traverse the directory. Permissions are a path, not a single checkpoint.
 8. **Event time vs. index time.** An empty SIEM search for an event you *know* happened — check your time range first. Nine times out of ten the data's there and you're looking at the wrong slice of the clock.
 9. **Front-load the lesson.** The Win11 permission debugging session became a one-line setup step on the Ubuntu box. That's the entire payoff of writing things down as you go.
@@ -326,11 +326,13 @@ This is the instrument a Tier 1/Tier 2 analyst actually works inside: multiple d
 
 ---
 
-## HUMINT to SOC Translation
+## Competitive Intelligence to SOC Translation
 
-The throughline of this entire build was a single instinct from twenty years of source work: **verify access before you trust the take.** It showed up as the tcpdump that proved the sensor could see before I built on it, as walking the dead Wazuh pipe one link at a time, as confirming a forwarder was *sending* and not just *connected*, and as checking the live CIM spec instead of trusting my own notes.
+For twenty years before this I worked in competitive intelligence — an analyst's desk, not a field. The job was directing researchers who got people talking, then doing the harder part: reviewing what came back, leaning on anything that didn't add up, and getting a claim confirmed a second and third way before I'd build it into a picture executives would act on. None of that is technical. All of it transferred.
 
-The other transfer was decision discipline — deferring MDE cleanly the moment it stopped being load-bearing, instead of grinding on a blocked avenue out of commitment. Knowing when to reroute without losing the objective is the same muscle in elicitation and in lab-building. And the detection philosophy I keep circling — that signatures catch the loud and the lazy, while the careful adversary only shows up in the *pattern over time* — is exactly how you run a source you can't catch in any single meeting. The tooling is new. The way of thinking is not, and it's the part that doesn't show up on a certificate.
+The throughline of this entire build was the core habit of that work: **don't trust a link you haven't personally checked.** It showed up as the tcpdump that proved the sensor could see before I built on it, as walking the dead Wazuh pipe one hop at a time, as confirming a forwarder was *sending* and not just *connected*, and as checking the live CIM spec instead of trusting my own notes. Corroborate first, then bank it — the same discipline as never briefing a fact I'd only heard from one source.
+
+The other transfer was decision discipline — deferring MDE the moment it stopped being load-bearing instead of grinding on it out of commitment. When a line of inquiry stopped paying out, I learned long ago to redirect rather than dig in. And the detection philosophy I keep circling — that signatures catch the loud and the lazy, while the careful adversary only shows up in the *pattern over time* — is the same way a real read on a competitor never lived in any single source; it emerged from the convergence of many. The tooling is new. The way of thinking is not, and it's the part that doesn't show up on a certificate.
 
 ---
 
