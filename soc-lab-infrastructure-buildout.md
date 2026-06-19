@@ -328,7 +328,7 @@ This is the instrument a Tier 1/Tier 2 analyst actually works inside: multiple d
 
 ## Competitive Intelligence to SOC Translation
 
-For twenty years before this I worked in competitive intelligence — an analyst's desk, not a field. The job was directing researchers who got people talking, then doing the harder part: reviewing what came back, leaning on anything that didn't add up, and getting a claim confirmed a second and third way before I'd build it into a picture executives would act on. None of that is technical. All of it transferred.
+For twenty years before this I worked in competitive intelligence as an analyst and client-facing consultant. The internal job was directing researchers who got people talking, then doing the harder part: reviewing what came back, leaning on anything that didn't add up, and getting a claim confirmed a second and third way before I'd build it into a picture executives would act on. None of that is technical. All of it transferred.
 
 The throughline of this entire build was the core habit of that work: **don't trust a link you haven't personally checked.** It showed up as the tcpdump that proved the sensor could see before I built on it, as walking the dead Wazuh pipe one hop at a time, as confirming a forwarder was *sending* and not just *connected*, and as checking the live CIM spec instead of trusting my own notes. Corroborate first, then bank it — the same discipline as never briefing a fact I'd only heard from one source.
 
