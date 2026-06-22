@@ -1,4 +1,4 @@
-# Home SOC Lab — Build It, Attack It, Detect It
+# Home SOC Lab — Build & Defend, Attack & Detect
 
 If you've scrolled through a few home-lab repos, you know the genre: a clean Wazuh install, three green checkmarks, a screenshot of an alert firing, done. Everything works on the first try. Nobody ever types the wrong password, points a sensor at the wrong interface, or spends twenty minutes staring at an empty search wondering where their data went.
 
