@@ -357,6 +357,11 @@ index=* EventCode=4769 Ticket_Encryption_Type=0x17
     <group>credential_access,kerberoasting,</group>
   </rule>
 </group>
-```
+---
+
+## Author
+
+[Malakh Fuller](https://www.linkedin.com/in/malakhfuller/) · [GitHub](https://github.com/MalakhFuller)
+
 
 **Scope note:** rule 100100 keys on Impacket's specific ticket-options value, so it's high-fidelity against this exact tool and blind to a patient attacker who changes the options or paces the requests out. That's the right *first* deliverable — catch the loud and the lazy with near-zero false positives — but the robust next tier is frequency-and-behavior detection: one principal requesting many distinct SPNs, a non-server host reaching for a service-account ticket, volume over time. That's the open thread, and it's where a future piece is headed.
