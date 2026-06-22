@@ -35,7 +35,7 @@ Alongside the writeups: config artifacts, the hand-built CIM add-on (`TA-suricat
 | Splunk-SIEM02 | SIEM #2 (Splunk Enterprise) | 10.10.10.137 |
 | Suricata-Sensor01 | Passive network IDS | 10.10.10.140 |
 
-All seven on an isolated `10.10.10.0/24` segment. Telemetry from three endpoints and one network sensor lands in both Wazuh and Splunk.
+All seven VMs sit on an isolated `10.10.10.0/24` segment. Telemetry from the three endpoints and one network sensor lands in both Wazuh and Splunk.
 
 ---
 
