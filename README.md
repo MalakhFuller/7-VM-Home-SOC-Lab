@@ -1,20 +1,29 @@
-# Home SOC Lab — Dual-SIEM Infrastructure Build-Out
+# Home SOC Lab — Build It, Attack It, Detect It
 
 If you've scrolled through a few home-lab repos, you know the genre: a clean Wazuh install, three green checkmarks, a screenshot of an alert firing, done. Everything works on the first try. Nobody ever types the wrong password, points a sensor at the wrong interface, or spends twenty minutes staring at an empty search wondering where their data went.
 
 That's not this repo. This is the version with the dead ends left in.
 
-I'm a career-changer moving into detection and SOC work after about twenty years in HUMINT/human intelligence driven competitive intelligence work. So I'll be straight about where I stand: I'm genuinely new to the tooling, but I'm not new to the *thinking*. The instinct to verify before you trust, to take a broken chain apart one link at a time, to decide an avenue isn't worth grinding on and reroute cleanly — that part isn't new. That's the job I already had, pointed at a different target. This lab is where I'm welding the two together, and writing down every place the weld didn't hold the first time.
+I'm a career-changer moving into detection and SOC work after about twenty years in human-intelligence-driven competitive intelligence research — as a desk analyst and client-facing consultant. The job was directing researchers who got people on the phone talking, then doing the part that actually mattered: reviewing what came back, pushing for a second and third independent source before I'd believe it, and turning it into briefings executives and clients made real decisions on. So I'll be straight about where I stand: I'm new to the tooling, but I'm not new to the *thinking*. The instinct to verify before you trust, to take a broken chain apart one link at a time, to corroborate a finding against a second source before you bank on it, to decide an avenue isn't worth grinding on and reroute cleanly — none of that is new. It's the analytical half of the job I already had, pointed at a different target. This lab is where I'm welding the two together, and writing down every place the weld didn't hold the first time.
 
 ---
 
-## What this is
+## How to read this repo
 
-A seven-VM home SOC lab built from scratch inside VMware Workstation Pro on a single host, on a fully isolated network. It's not a single-SIEM tutorial box. By the end it runs **two SIEMs in parallel**, a **passive network IDS feeding both of them**, and a **normalization layer I hand-wrote** so the sensor's data actually speaks the same language as everything else.
+The work follows an intrusion the way it actually unfolds: build the instrument first, then walk the kill chain one step at a time — gain a foothold, escalate, move.
 
-The whole thing is the instrument. The *next* project is me attacking it.
+1. **[The Lab Buildout](./soc-lab-infrastructure-buildout.md)** — the dual-SIEM + network-IDS environment everything else runs on. It's the foundation the rest builds on; start here.
+2. **Password Spraying** — _in progress_ — the initial foothold. Behavioral/frequency detection (MITRE ATT&CK [T1110.003](https://attack.mitre.org/techniques/T1110/003/)): thresholds, time-windowing, and the real challenge of telling a spray apart from a Monday-morning password-reset storm.
+3. **[Kerberoasting on an AES-Only Domain](./kerberoasting-aes-roast-dual-siem-detection.md)** — credential access after a foothold. Why the textbook RC4 detection is blind on a hardened Server 2025 domain, and the behavioral rule that catches it in both SIEMs (MITRE ATT&CK [T1558.003](https://attack.mitre.org/techniques/T1558/003/)).
+4. **Lateral Movement** — _planned_ — the capstone: moving across the domain once you're in.
 
-### The lab at a glance
+Each writeup is self-contained and built for two readers: a narrative with the reasoning and the dead ends left in, then a copy-paste **reference appendix** with the working detections and a scope note on what they do and don't catch. Read the story if you're evaluating how I think; jump to the appendix if you just need the rule.
+
+Alongside the writeups: config artifacts, the hand-built CIM add-on (`TA-suricata-cim`), and screenshots documenting each step — including the ones where it wasn't working yet.
+
+---
+
+## The lab at a glance
 
 | VM | Role | IP |
 |---|---|---|
@@ -40,35 +49,25 @@ Three things, and they're the three I'd want to be asked about:
 
 ---
 
-## What's in this repo
-
-- **[`soc-lab-infrastructure-buildout.md`](./soc-lab-infrastructure-buildout.md)** — the full writeup. Every phase, every wall I hit, every recovery. If you only read one file, read that one.
-- Config artifacts and the hand-built CIM add-on (`TA-suricata-cim`).
-- Screenshots documenting each step, including the ones where it wasn't working yet.
-
-The writeup is deliberately honest about the friction: the cloud-EDR trial that tripped a fraud hold and got deferred, the silent-typo lockout that cost an evening, the host field that bit me three separate times before I learned it's the real computer name and not the VM label, the dead pipe between the sensor and the second SIEM that came down to one un-reloaded config file, and the "data model not found" error that turned out to be a missing base add-on I'd *assumed* was installed. None of that is in here to look humble. It's in here because the troubleshooting is the part that actually transferred to skill, and the clean-screenshot version would have hidden exactly the thing worth showing.
-
----
-
 ## The lessons that stuck
 
-The full list is in the writeup, but the ones I'll carry into a real SOC:
+The full list is in each writeup, but these are the ones I'll carry into a real SOC:
 
 - **A config edit and a service reload are two different actions.** Half the "but I configured it!" problems in this field are really "you configured it and never made anything reload it."
 - **When a test comes back empty, walk the chain from the source out.** Confirm the thing at the start actually fired before blaming anything downstream.
 - **The absence of an error is information.** Empty-and-not-complaining means a process never *tried* — which points somewhere different than a process that tried and failed.
-- **Verify the wire before you trust the wire.** One tcpdump command, run before I built anything, was the foundation the whole sensor build stood on.
+- **Verify the wire before you trust the wire.** One `tcpdump` command, run before I built anything, was the foundation the whole sensor build stood on.
 - **Verify prior-session assumptions against live reality.** What's true in your notes can be false on the box. The live error wins, every time.
 
 ---
 
 ## What's next
 
-The infrastructure is built and verified. The next project moves from *building* the instrument to *using* it — populating Active Directory with realistic targets (including a Kerberoastable service account, because a vanilla domain has nothing to roast), confirming the DC actually generates the telemetry the attacks should produce, and then running them: password spray, Kerberoasting, lateral movement, custom detection-rule writing in both SIEMs, and a full purple-team capstone with a real incident report.
+The instrument is built and verified, and the attacks have begun. Kerberoasting (above) is the first technique run through it end to end; password spraying and lateral movement are next, each ending in custom detection rules written in both SIEMs, and building toward a full purple-team capstone with a real incident report.
 
 That's where this lab stops being a thing I built and starts being a thing I can defend — attack by attack, detection by detection.
 
-I came up verifying access before I banked on what a source could give me. Turns out a SIEM pipeline is no different: prove every link, trust nothing you haven't checked yourself, and write down where it broke so it doesn't break you twice.
+I came up not trusting a single report until a second source backed it up. Turns out a SIEM pipeline is no different: prove every link, trust nothing you haven't checked yourself, and write down where it broke so it doesn't break you twice.
 
 ---
 
@@ -76,4 +75,4 @@ I came up verifying access before I banked on what a source could give me. Turns
 
 **Malakh Fuller** — [LinkedIn](https://www.linkedin.com/in/malakhfuller/) · [GitHub](https://github.com/MalakhFuller)
 
-*Security+ · CySA+ (in progress) · transitioning into detection engineering and SOC analysis from a HUMINT/CI background.*
+*CompTIA A+ · Network+ · Security+ · CySA+ (in progress) · transitioning into SOC analysis and detection engineering after twenty years in human-intelligence-driven competitive intelligence research.*
