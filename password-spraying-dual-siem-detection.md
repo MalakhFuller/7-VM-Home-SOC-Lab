@@ -93,13 +93,11 @@ kerbrute passwordspray -d soclab.local --dc 10.10.10.134 ~/userlist.txt 'Autumn2
 ```
 
 ![Kali terminal: kerbrute spraying 25 users, one green VALID LOGIN for areyes, "Tested 25 logins (1 successes) in 0.061 seconds"](screenshots/01_spray-successful.jpg)
-
 *The loud spray: 25 accounts, one password, one green `VALID LOGIN: areyes`. Note the time — **0.061 seconds** for 25 authentication attempts. No human and no application authenticates as 25 different users in a fraction of a second; that burst velocity is itself a detection signal, the spray cousin of the 11-millisecond ticket pair from the Kerberoasting roast.*
 
 One account came back green: `areyes@soclab.local:Autumn2025!`. Twenty-four failed, one landed, in 61 milliseconds. The attack worked — but before trusting any SIEM, I confirmed the telemetry at its source. On the DC, reading event 4771 (the failures) directly:
 
 ![PowerShell on the DC: 24 rows of event 4771, each a different username, all from ClientIP 10.10.10.128, all at 12:13:12](screenshots/02_spray-successful-DC01.jpg)
-
 *The attack at the source: 24 distinct usernames, one client IP (`10.10.10.128`), one timestamp (`12:13:12`). That trio — many users, one source, one moment — is the spray. Pull any single row out and it's a nothing-event: one user typo'd a password once. Only the aggregate means anything. **That is the entire detection problem in one screenshot.***
 
 Conspicuously absent from those 24 failures: `areyes`. Its password worked, so it logged a 4768 (success) instead — buried in the same instant, hidden among legitimate logon traffic. Surfacing that one success out of the noise turns out to be the hardest and most valuable half of the detection.
