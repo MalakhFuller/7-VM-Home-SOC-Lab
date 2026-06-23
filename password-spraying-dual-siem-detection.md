@@ -3,6 +3,7 @@
 *Part of an ongoing detection-engineering series — each entry takes one intrusion technique end to end through two SIEMs. This one is password spraying, the initial-access move an attacker reaches for before anything else: the foothold that the rest of the kill chain is built on.*
 
 **Completed:** 2026-06-23
+
 **Author:** Malakh Fuller
 
 > **Privacy note:** Internal lab IP addresses have been anonymized in this writeup and related screenshots. All testing was performed exclusively on my own isolated home lab network, against accounts I created specifically to be attacked.
