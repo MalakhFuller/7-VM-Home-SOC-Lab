@@ -5,11 +5,11 @@
 **Completed:** 2026-06-21
 **Author:** Malakh Fuller
 
-> **Privacy note:** Internal lab IP addresses have been anonymized in this writeup and related screenshots. All testing was performed exclusively on my own isolated home lab network, against accounts I created specifically to be attacked.
+**Privacy note:** Internal lab IP addresses have been anonymized in this writeup and related screenshots. All testing was performed exclusively on my own isolated home lab network, against accounts I created specifically to be attacked.
 
-> **How to read this:** This is the honest version, and this one earns the label. The attack and the crack went fast. The detection engineering — the Wazuh half in particular — was a multi-hour fight with wrong turns, false leads, and a long stretch where I was nearly convinced a clean event had vanished into thin air. All of it is in here on purpose. A writeup where the custom rule fires on the first try is a writeup where nothing was actually learned. The dead ends *are* the experience; they're the part I can defend in an interview, because I lived every one of them.
+**How to read this:** This is the honest version, and this one earns the label. The attack and the crack went fast. The detection engineering — the Wazuh half in particular — was a multi-hour fight with wrong turns, false leads, and a long stretch where I was nearly convinced a clean event had vanished into thin air. All of it is in here on purpose. A writeup where the custom rule fires on the first try is a writeup where nothing was actually learned. The dead ends *are* the experience; they're the part I can defend in an interview, because I lived every one of them.
 
-> **On AI:** As with the rest of this series, I used Claude as a research and troubleshooting partner — and on this exercise it was a working partner more than on any build before it. When the Wazuh rule refused to fire, the two of us bisected the problem together: it proposed the next probe, I ran it and fed back the result, and we narrowed the fault one layer at a time. The division of labor is the same one I'll stand behind in any room: every command was one I ran, every wall was one I hit myself, every judgment call — when to push, when to bank, when a confident-sounding fix didn't smell right — was mine, and more than once I was the one who pushed back on a theory that turned out to be wrong. Every claim here I can defend with the tab closed. I'd have reached the same working rule without AI; it would simply have cost me days (weeks?) of forum threads instead of one evening. In a field where the ground shifts weekly, that's a trade I'll take every time. The carpenter who refuses power tools still builds the house — it just takes him longer, and fewer people line up to hire him.
+**On AI:** As with the rest of this series, I used Claude as a research and troubleshooting partner — and on this exercise it was a working partner more than on any build before it. When the Wazuh rule refused to fire, the two of us bisected the problem together: it proposed the next probe, I ran it and fed back the result, and we narrowed the fault one layer at a time. The division of labor is the same one I'll stand behind in any room: every command was one I ran, every wall was one I hit myself, every judgment call — when to push, when to bank, when a confident-sounding fix didn't smell right — was mine, and more than once I was the one who pushed back on a theory that turned out to be wrong. Every claim here I can defend with the tab closed. I'd have reached the same working rule without AI; it would simply have cost me days of forum threads instead of an evening. In a field where the ground shifts weekly, that's a trade I'll take every time. The carpenter who refuses power tools still builds the house — it just takes him longer, and fewer people line up to hire him.
 
 ---
 
@@ -314,7 +314,9 @@ I'm new to the tools. I'll be new to them for a while. But "diagnose, don't gues
 
 ---
 
-## Lessons worth keeping
+## Key Lessons
+
+These are the ones I'll carry into a real SOC, because each cost me something to learn.
 
 1. **Behavioral beats signature in a hardened environment.** The classic RC4 Kerberoast rule is blind to an AES roast, and on a hardened domain the cipher signal can even invert. Match the tool's fingerprint and the request's shape, not the encryption type.
 2. **The control was the password, not the cipher.** AES made the hash ~1,000× slower to brute-force and bought nothing against `Summer2024!`. gMSAs or 25+ character random service passwords are the actual fix.
@@ -323,6 +325,46 @@ I'm new to the tools. I'll be new to them for a while. But "diagnose, don't gues
 5. **Read the vendor ruleset before you write into it.** The stock rules are the documentation for the decoder names, the field paths, and the parent chain. Ten minutes of reading would have saved me four restart cycles.
 6. **Confirm at the source, and second-source everything.** The DC's raw event before the SIEM; the archive before the dashboard; Splunk against Wazuh. When one source comes back empty, check whether you're looking at the wrong source before you conclude the data is gone.
 7. **Watch for the boring infrastructure traps:** logs rotate at midnight *UTC*; a command-line-auditing host will log your IOC hunts back at you; and `wazuh-logtest` can't replay eventchannel events fed through stdin.
+
+---
+
+## Key Competencies Demonstrated
+
+- Kerberoasting attack execution against a hardened, AES-only Server 2025 domain (Impacket `getTGT` + `GetUserSPNs`), working around RC4 deprecation instead of assuming the legacy flow
+- Offline AES256 Kerberos ticket cracking (Hashcat mode 19700, GPU), and demonstrating that the cipher upgrade — not the password — was the real (failed) control
+- Behavioral, cipher-agnostic Splunk detection: matching the tool's ticket-options fingerprint (4769, `Ticket_Options=0x40810010`) rather than the encryption type the textbook rule keys on
+- Proving the textbook RC4 signature (`Ticket_Encryption_Type=0x17`) returns zero on a hardened domain — the core thesis, shown in real data
+- Wazuh custom rule authoring: `if_sid` anchoring into the Windows rule tree, field matching on `win.eventdata.ticketOptions`, MITRE tagging, and a multi-hour rule-engineering fight resolved by reading the stock ruleset
+- Distinguishing Wazuh *alerts* from *events*: using `logall_json` + `archives.json` to prove an event reached and decoded when the dashboard showed "no results"
+- Multi-source corroboration under uncertainty — playing Splunk against Wazuh, and the raw DC event against both, to locate a fault one tool was hiding
+- Honest scoping of a high-fidelity-but-narrow detection and the behavioral next tier it points to
+
+---
+
+## Employer-Relevant Skills
+
+**Tools:** Splunk Enterprise (SPL, `stats`, behavioral vs. signature searches), Wazuh (custom rules, `if_sid` chaining, field matching, decoder/rule-tree analysis, `local_rules.xml`, `archives.json`), Impacket, Hashcat, Active Directory / Windows Security auditing, Sysmon, Kali Linux
+
+**Concepts:** Kerberoasting and the Kerberos service-ticket flow, behavioral vs. signature detection, encryption-type deprecation (RC4 → AES) and its detection impact, offline hash cracking economics, service-account hardening (gMSA / long random passwords), alerts-vs-events distinction, multi-source corroboration, MITRE mapping in-rule
+
+**Frameworks:** MITRE ATT&CK (T1558.003 — Kerberoasting), Splunk Common Information Model
+
+---
+
+## SOC Relevance
+
+Kerberoasting is a staple credential-access technique a Tier 1/Tier 2 analyst is expected to recognize, and this exercise hits the part that makes it genuinely hard in 2026: most published detections were written for the RC4 world, and they go silent on a hardened, AES-only domain. The work here is exactly the analyst's daily reality — knowing that a "should-fire" rule returning nothing isn't proof of no attack, knowing to confirm at the source when one tool and another disagree, and understanding the telemetry well enough to build detection that matches the attacker's *behavior* rather than an encryption artifact the OS is actively retiring. An analyst who can tell the difference between "no alert" and "no attack," and who knows where to look when a SIEM hides an event in plain sight, is the difference between a caught intrusion and a closed-as-noise ticket.
+
+---
+
+## What's Next
+
+This is the credential-access move after the foothold; the series runs the kill chain in order.
+
+- **Password spraying** (MITRE T1110.003) — the initial foothold that comes *before* this one, already published in the series: loud and low-and-slow spray detection across both SIEMs.
+- **Lateral movement** — the capstone: moving across the domain after credential access, with live endpoint hunting.
+
+And the open thread specific to *this* detection, from the scope note: rule 100100 keys on Impacket's exact ticket-options value, so it's high-fidelity against this tool and blind to a patient attacker who changes the options or paces the requests. The robust next tier is **frequency-and-behavior detection** — one principal requesting many distinct SPNs, a non-server host reaching for a service-account ticket, volume over time — which is where a future iteration heads. There's also one honest open question carried from the narrative: isolating *why* `win.system.eventID` won't match on these eventchannel events, which I have a strong hypothesis for but did not prove with a controlled test.
 
 ---
 
@@ -357,11 +399,6 @@ index=* EventCode=4769 Ticket_Encryption_Type=0x17
     <group>credential_access,kerberoasting,</group>
   </rule>
 </group>
----
-
-## Author
-
-[Malakh Fuller](https://www.linkedin.com/in/malakhfuller/) · [GitHub](https://github.com/MalakhFuller)
-
+```
 
 **Scope note:** rule 100100 keys on Impacket's specific ticket-options value, so it's high-fidelity against this exact tool and blind to a patient attacker who changes the options or paces the requests out. That's the right *first* deliverable — catch the loud and the lazy with near-zero false positives — but the robust next tier is frequency-and-behavior detection: one principal requesting many distinct SPNs, a non-server host reaching for a service-account ticket, volume over time. That's the open thread, and it's where a future piece is headed.
