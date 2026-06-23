@@ -13,7 +13,7 @@ I'm a career-changer moving into detection and SOC work after about twenty years
 The work follows an intrusion the way it actually unfolds: build the instrument first, then walk the kill chain one step at a time — gain a foothold, escalate, move.
 
 1. **[The Lab Buildout](./soc-lab-infrastructure-buildout.md)** — the dual-SIEM + network-IDS environment everything else runs on. It's the foundation the rest builds on; start here.
-2. **Password Spraying** — _in progress_ — the initial foothold. Behavioral/frequency detection (MITRE ATT&CK [T1110.003](https://attack.mitre.org/techniques/T1110/003/)): thresholds, time-windowing, and the real challenge of telling a spray apart from a Monday-morning password-reset storm.
+2. **[Password Spraying a No-Lockout Domain](./password-spraying-dual-siem-detection.md)** — the initial foothold. Catching a loud spray in both SIEMs, then defeating those same detections with a low-and-slow spray that exposes where each SIEM's architecture wins and loses — including telling a real spray apart from a Monday-morning password-reset storm (MITRE ATT&CK [T1110.003](https://attack.mitre.org/techniques/T1110/003/)).
 3. **[Kerberoasting on an AES-Only Domain](./kerberoasting-aes-roast-dual-siem-detection.md)** — credential access after a foothold. Why the textbook RC4 detection is blind on a hardened Server 2025 domain, and the behavioral rule that catches it in both SIEMs (MITRE ATT&CK [T1558.003](https://attack.mitre.org/techniques/T1558/003/)).
 4. **Lateral Movement** — _planned_ — the capstone: moving across the domain once you're in.
 
@@ -63,7 +63,7 @@ The full list is in each writeup, but these are the ones I'll carry into a real 
 
 ## What's next
 
-The instrument is built and verified, and the attacks have begun. Kerberoasting (above) is the first technique run through it end to end; password spraying and lateral movement are next, each ending in custom detection rules written in both SIEMs, and building toward a full purple-team capstone with a real incident report.
+The instrument is built and verified, and the attacks are underway. Password spraying and Kerberoasting (above) are both run through it end to end — each ending in custom detection rules written in both SIEMs, including the contrast between a loud attack and a patient one. Lateral movement is next, building toward a full purple-team capstone with a real incident report.
 
 That's where this lab stops being a thing I built and starts being a thing I can defend — attack by attack, detection by detection.
 
