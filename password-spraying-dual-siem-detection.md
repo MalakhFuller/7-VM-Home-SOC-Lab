@@ -93,12 +93,16 @@ kerbrute passwordspray -d soclab.local --dc 10.10.10.134 ~/userlist.txt 'Autumn2
 ```
 
 ![Kali terminal: kerbrute spraying 25 users, one green VALID LOGIN for areyes, "Tested 25 logins (1 successes) in 0.061 seconds"](screenshots/01_spray-successful.jpg)
+
 *The loud spray: 25 accounts, one password, one green `VALID LOGIN: areyes`. Note the time — **0.061 seconds** for 25 authentication attempts. No human and no application authenticates as 25 different users in a fraction of a second; that burst velocity is itself a detection signal, the spray cousin of the 11-millisecond ticket pair from the Kerberoasting roast.*
+
 
 One account came back green: `areyes@soclab.local:Autumn2025!`. Twenty-four failed, one landed, in 61 milliseconds. The attack worked — but before trusting any SIEM, I confirmed the telemetry at its source. On the DC, reading event 4771 (the failures) directly:
 
 ![PowerShell on the DC: 24 rows of event 4771, each a different username, all from ClientIP 10.10.10.128, all at 12:13:12](screenshots/02_spray-successful-DC01.jpg)
+
 *The attack at the source: 24 distinct usernames, one client IP (`10.10.10.128`), one timestamp (`12:13:12`). That trio — many users, one source, one moment — is the spray. Pull any single row out and it's a nothing-event: one user typo'd a password once. Only the aggregate means anything. **That is the entire detection problem in one screenshot.***
+
 
 Conspicuously absent from those 24 failures: `areyes`. Its password worked, so it logged a 4768 (success) instead — buried in the same instant, hidden among legitimate logon traffic. Surfacing that one success out of the noise turns out to be the hardest and most valuable half of the detection.
 
@@ -118,6 +122,7 @@ index=* host=WIN-CBG93HEA6LI EventCode=4771 | stats count by user, src_ip
 
 *Aggregation in embryo — 24 distinct users, all from one source. The picture a human can read, but not yet a detection that decides anything.*
 
+
 **Step two — the spray fingerprint.** The thing that defines a spray isn't the *number* of failures, it's the number of *distinct accounts* one source touched. That's `dc()` — distinct count — and it's the line that turns a table into a verdict:
 
 ```spl
@@ -134,6 +139,7 @@ index=* host=WIN-CBG93HEA6LI (EventCode=4771 OR EventCode=4768)
 
 *One row, and it's a complete incident report: source `10.10.10.128` sprayed 24 distinct accounts and **compromised `areyes`** — named, in the `compromised` column. `dc(user)` is what makes this a spray detector and not a generic failed-login counter: a single user fat-fingering their password 24 times shows `users_failed = 1` and never fires. A spray hitting 24 accounts shows 24 and does.*
 
+
 That `compromised` column is the difference between a tripwire and an incident report. A count-threshold rule tells the analyst "an IP is failing a lot." This one tells them *which account just got taken*, by name, in the same alert. It's the sentence that matters at 2 a.m.
 
 **Why the success-correlation matters — the reset-storm camouflage.** A bare count threshold is dangerous, because a legitimate event looks identical to it: a **password-reset storm**. Helpdesk resets a batch of accounts after a breach scare; cached credentials go stale; suddenly many distinct users fail auth from one source in a short window — indistinguishable from a spray to a `dc(user) >= 10` rule. Worse, a competent attacker can *deliberately* time a spray to hide inside an expected reset storm — burying the real attack in noise the SOC has already written off, a window of blindness driven straight through.
@@ -149,6 +155,7 @@ Wazuh is a real-time, rule-driven engine, and it surprised me. Where it had been
 ![Wazuh Events: 24 hits clustered at 12:13, most rule.id 60104 "Windows audit failure event" level 5, two rows rule.id 60205 "Multiple Windows audit failure events" level 10](screenshots/05_Wazuh-default-spraycatcher.jpg)
 
 *Out of the box: every 4771 fires stock rule **60104** (per-event failure, level 5), and stock rule **60205** ("Multiple Windows audit failure events", level 10) is *already* firing on the burst. Unlike the Kerberoasting case, the stock ruleset catches this attack with zero custom work — because a spray is a **volume** pattern, and Wazuh ships generic volume-correlation rules.*
+
 
 That the two SIEMs behaved *oppositely* across two attacks is itself worth naming: Wazuh slept through the AES Kerberoast (a single-event behavioral fingerprint it had no rule for) but wakes up on the spray (a volume burst it has generic rules for). The tools' built-in coverage maps to the *shape* of the attack. That's not a flaw in either — it's the argument for running both.
 
@@ -174,11 +181,13 @@ It fired:
 
 *Rule 100200 in the manager's own alert ledger — confirmed at the source (`alerts.json`), not trusted from the dashboard. The description renders the live source IP. (The earlier "8+ distinct... within 60s" lines are from the first rule version; the bottom line is the re-parented rule.)*
 
+
 And it surfaces correctly in the dashboard, including Wazuh's native MITRE view:
 
 ![Wazuh dashboard: rule.id 100200, 3 total / 3 level-12 / 3 auth-failure alerts, Top 10 MITRE ATT&CKS donut showing "Password Spraying"](screenshots/07_Wazuh-dashboard-victory.jpg)
 
 *The custom rule firing at level 12, mapped to **Password Spraying** in the MITRE ATT&CK panel. The `<mitre><id>T1110.003</id></mitre>` tag feeds Wazuh's native threat model — the rule isn't just firing, it's integrated into the framework a SOC actually uses.*
+
 
 So both SIEMs catch the loud spray, through genuinely different mechanisms: Splunk by search-time aggregation plus success-correlation, Wazuh by real-time frequency correlation refined with a distinct-user condition. Same attack, two detection philosophies. That's the payoff of the dual-SIEM lab — and it's about to become the entire point, because next I tried to break both of them.
 
@@ -198,6 +207,7 @@ The question this answers: does the detection survive a patient attacker? I ran 
 
 *The evasion, live. In any 15-minute slice, the slow spray has touched only ~3 distinct accounts — far under a threshold of 8. A short-window alerting rule looks at this and sees nothing worth paging anyone about. The attack is actively running and **invisible at this time scale.** (That `aboyd, vcruz, wshaw` are non-consecutive in the list confirms the spray had been pacing steadily for over an hour.)*
 
+
 **A one-hour window — the fix.** Same logic, wider lens, plus a time-span field that tells the analyst this was *slow*:
 
 ```spl
@@ -216,6 +226,7 @@ index=* host=WIN-CBG93HEA6LI (EventCode=4771 OR EventCode=4768)
 
 *The catch. Over the longer window the slow spray is unmistakable — 25 distinct accounts, `compromised: areyes`, and `span_minutes` of **151.9**. That span field is the production-grade tell: a loud spray shows a span near zero; this one is spread across two and a half hours. Same distinct-user logic, opposite time signature — and the time signature is what tells an analyst "patient adversary," not "glitch."*
 
+
 The fix for low-and-slow isn't a bigger threshold — it's a different *shape*: stop counting failures fast, and start counting **distinct users per source over a long rolling window**. One source failing against many accounts over an hour is abnormal at any speed, because the durable truth of a spray is that one origin touches accounts it has no business touching. A legitimate workstation authenticates one or two users; a spray source touches dozens. That holds whether the attacker is fast or slow.
 
 A bonus finding surfaced from running this for real rather than fast. In a strict 60-minute window, the `compromised` column came back *empty* — because the spray walks the list in order, `areyes` is first, and by evaluation time its success was more than 60 minutes old and had aged *out* of the window while the failures inside it were plentiful. The very slowness that defeats the threshold also **desynchronizes the success from the failures relative to any fixed window** — so a window-bound rule can catch the spray but miss the compromise. Widening the window to two hours recaptured `areyes` (the screenshot above). The operational fix is to give the success-correlation a longer, independent lookback, or a stateful lookup that remembers a flagged success and re-associates it when the failures are detected later. That edge only shows up against a genuinely slow attack — which is exactly why I ran one.
@@ -232,11 +243,13 @@ My rule 100200 chains off stock rule 60205, which needs **8 failures from one so
 
 *Rule 100200 across the entire slow-spray window: nothing. The streaming frequency engine is silent — the failures never accumulated fast enough to trigger it.*
 
+
 "No results" alone could mean a bad filter rather than a real miss, so I proved the silence by confirming the failures *were* arriving the whole time:
 
 ![Wazuh dashboard, eventID 4771, Last 2 hours: Total 23, Level 12+ alerts 0, Auth failure 0, Auth success 0](screenshots/11_Wazuh-23-4771-failures.jpg)
 
 *The airtight proof: **23 failure events present, zero high-severity alerts.** The telemetry flowed the entire time; the spray rule fired zero times. Not missing data — the rule is structurally blind to the paced attack. (The "absence of an error is information" lesson from the buildout, in a new form: here, the absence of an alert against present data is the finding.)*
+
 
 This is the central architectural finding, and it's worth stating plainly because it's the kind of thing that separates understanding detection *operations* from understanding detection *syntax*:
 
