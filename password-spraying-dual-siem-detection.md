@@ -3,13 +3,14 @@
 *Part of an ongoing detection-engineering series — each entry takes one intrusion technique end to end through two SIEMs. This one is password spraying, the initial-access move an attacker reaches for before anything else: the foothold that the rest of the kill chain is built on.*
 
 **Completed:** 2026-06-23
+
 **Author:** Malakh Fuller
 
-**Privacy note:** Internal lab IP addresses have been anonymized in this writeup and related screenshots. All testing was performed exclusively on my own isolated home lab network, against accounts I created specifically to be attacked.
+> **Privacy note:** Internal lab IP addresses have been anonymized in this writeup and related screenshots. All testing was performed exclusively on my own isolated home lab network, against accounts I created specifically to be attacked.
 
-**How to read this:** This is the honest version. The attack itself is trivial — spraying is the easiest technique in the book. The interesting work is entirely in the detection, and specifically in the gap between catching a *loud* spray and catching a *patient* one. Both are in here, including the part where my own Wazuh rule went stone silent against the slow attack — not because it was broken, but because the attack was designed to make it useless. A writeup where every rule fires on every attack is a writeup that never met a real adversary. The places where the detection *failed* are the places worth reading; they're the ones I can defend in an interview, because I watched them fail in real time and understood why.
+> **How to read this:** This is the honest version. The attack itself is trivial — spraying is the easiest technique in the book. The interesting work is entirely in the detection, and specifically in the gap between catching a *loud* spray and catching a *patient* one. Both are in here, including the part where my own Wazuh rule went stone silent against the slow attack — not because it was broken, but because the attack was designed to make it useless. A writeup where every rule fires on every attack is a writeup that never met a real adversary. The places where the detection *failed* are the places worth reading; they're the ones I can defend in an interview, because I watched them fail in real time and understood why.
 
-**On AI:** As with the rest of this series, I used Claude as a research and troubleshooting partner. The division of labor is the one I'll stand behind in any room: every command was one I ran, every wall was one I hit myself, every judgment call — when to push, when to bank, which detection design to trust — was mine, and more than once I was the one who caught the error (a mistyped password that silently broke a two-hour run; a stale dashboard filter hiding the very data I needed). Every claim here I can defend with the tab closed. The carpenter who refuses power tools still builds the house — it just takes him longer, and fewer people line up to hire him.
+> **On AI:** As with the rest of this series, I used Claude as a research and troubleshooting partner. The division of labor is the one I'll stand behind in any room: every command was one I ran, every wall was one I hit myself, every judgment call — when to push, when to bank, which detection design to trust — was mine, and more than once I was the one who caught the error (a mistyped password that silently broke a two-hour run; a stale dashboard filter hiding the very data I needed). Every claim here I can defend with the tab closed. The carpenter who refuses power tools still builds the house — it just takes him longer, and fewer people line up to hire him.
 
 ---
 
@@ -305,3 +306,10 @@ index=* host=WIN-CBG93HEA6LI (EventCode=4771 OR EventCode=4768)
 ```
 
 **Scope note:** the Wazuh rule chains off stock frequency rule 60205 (8 failures from one source in 240 seconds) and adds the distinct-user condition — so it's high-fidelity against a *loud* spray and, by design, **blind to a low-and-slow spray** that stays under that frequency. That blindness isn't a defect to hide; it's the architectural finding of this piece. The Splunk searches catch the slow case because a search engine can count distinct values over an arbitrary window; a streaming rule engine can't. Two open threads for a future iteration: a Wazuh composite rule that ties the 4768 success to the spray source (Splunk does this; Wazuh doesn't yet), and a stateful long-window approach to catch the slow spray Wazuh currently misses. Catching the loud and the lazy with near-zero false positives is the right *first* deliverable; the robust next tier is behavioral baselining of distinct-users-per-source over time.
+
+---
+
+## Author
+
+[Malakh Fuller](https://www.linkedin.com/in/malakhfuller/) · [GitHub](https://github.com/MalakhFuller)
+
