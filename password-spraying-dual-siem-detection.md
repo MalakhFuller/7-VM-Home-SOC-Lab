@@ -3,14 +3,13 @@
 *Part of an ongoing detection-engineering series — each entry takes one intrusion technique end to end through two SIEMs. This one is password spraying, the initial-access move an attacker reaches for before anything else: the foothold that the rest of the kill chain is built on.*
 
 **Completed:** 2026-06-23
-
 **Author:** Malakh Fuller
 
-> **Privacy note:** Internal lab IP addresses have been anonymized in this writeup and related screenshots. All testing was performed exclusively on my own isolated home lab network, against accounts I created specifically to be attacked.
+**Privacy note:** Internal lab IP addresses have been anonymized in this writeup and related screenshots. All testing was performed exclusively on my own isolated home lab network, against accounts I created specifically to be attacked.
 
-> **How to read this:** This is the honest version. The attack itself is trivial — spraying is the easiest technique in the book. The interesting work is entirely in the detection, and specifically in the gap between catching a *loud* spray and catching a *patient* one. Both are in here, including the part where my own Wazuh rule went stone silent against the slow attack — not because it was broken, but because the attack was designed to make it useless. A writeup where every rule fires on every attack is a writeup that never met a real adversary. The places where the detection *failed* are the places worth reading; they're the ones I can defend in an interview, because I watched them fail in real time and understood why.
+**How to read this:** This is the honest version. The attack itself is trivial — spraying is the easiest technique in the book. The interesting work is entirely in the detection, and specifically in the gap between catching a *loud* spray and catching a *patient* one. Both are in here, including the part where my own Wazuh rule went stone silent against the slow attack — not because it was broken, but because the attack was designed to make it useless. A writeup where every rule fires on every attack is a writeup that never met a real adversary. The places where the detection *failed* are the places worth reading; they're the ones I can defend in an interview, because I watched them fail in real time and understood why.
 
-> **On AI:** As with the rest of this series, I used Claude as a research and troubleshooting partner. The division of labor is the one I'll stand behind in any room: every command was one I ran, every wall was one I hit myself, every judgment call — when to push, when to bank, which detection design to trust — was mine, and more than once I was the one who caught the error (a mistyped password that silently broke a two-hour run; a stale dashboard filter hiding the very data I needed). Every claim here I can defend with the tab closed. The carpenter who refuses power tools still builds the house — it just takes him longer, and fewer people line up to hire him.
+**On AI:** As with the rest of this series, I used Claude as a research and troubleshooting partner. The division of labor is the one I'll stand behind in any room: every command was one I ran, every wall was one I hit myself, every judgment call — when to push, when to bank, which detection design to trust — was mine, and more than once I was the one who caught the error (a mistyped password that silently broke a two-hour run; a stale dashboard filter hiding the very data I needed). Every claim here I can defend with the tab closed. The carpenter who refuses power tools still builds the house — it just takes him longer, and fewer people line up to hire him.
 
 ---
 
@@ -100,9 +99,7 @@ kerbrute passwordspray -d soclab.local --dc 10.10.10.134 ~/userlist.txt 'Autumn2
 One account came back green: `areyes@soclab.local:Autumn2025!`. Twenty-four failed, one landed, in 61 milliseconds. The attack worked — but before trusting any SIEM, I confirmed the telemetry at its source. On the DC, reading event 4771 (the failures) directly:
 
 ![PowerShell on the DC: 24 rows of event 4771, each a different username, all from ClientIP 10.10.10.128, all at 12:13:12](screenshots/02_spray-successful-DC01.jpg)
-
 *The attack at the source: 24 distinct usernames, one client IP (`10.10.10.128`), one timestamp (`12:13:12`). That trio — many users, one source, one moment — is the spray. Pull any single row out and it's a nothing-event: one user typo'd a password once. Only the aggregate means anything. **That is the entire detection problem in one screenshot.***
-
 
 Conspicuously absent from those 24 failures: `areyes`. Its password worked, so it logged a 4768 (success) instead — buried in the same instant, hidden among legitimate logon traffic. Surfacing that one success out of the noise turns out to be the hardest and most valuable half of the detection.
 
@@ -269,7 +266,9 @@ I'm new to the tools. "Diagnose, don't guess" isn't a slogan I had to learn — 
 
 ---
 
-## Lessons worth keeping
+## Key Lessons
+
+These are the ones I'll carry into a real SOC, because each cost me something to learn.
 
 1. **A Kerberos spray is 4771/4768, not 4625.** A rule that only watches NTLM logon failures is blind to a Kerberos spray. Match the telemetry the *tool* actually generates, not the one the textbook assumes.
 2. **`dc(user)` is the spray fingerprint.** Counting failures catches a stuck service account too. Counting *distinct users from one source* is what actually means "spray."
@@ -280,6 +279,53 @@ I'm new to the tools. "Diagnose, don't guess" isn't a slogan I had to learn — 
 7. **Window boundaries desynchronize slow attacks.** When an attack spans longer than the detection window, the success and the failures can land in different windows. Give the success-correlation an independent, longer lookback.
 8. **No lockout means detection is the only control.** `LockoutThreshold = 0` removes prevention entirely; the alarm is all that's left, which raises the stakes on every rule in this writeup.
 9. **Boring traps cost real time:** browser-to-terminal paste silently mangles scripts (type, don't paste); a mistyped spray password turns a two-hour run into all-failures-no-success; and a leftover dashboard filter hides level-5 events behind a "Level 12+" chip and shows a false "no results."
+
+---
+
+## Key Competencies Demonstrated
+
+- Password-spray attack execution over Kerberos pre-authentication (kerbrute), including a seeded weak account for a realistic compromise
+- Source-of-truth telemetry validation on the domain controller (4771 / 4768) before trusting any SIEM
+- Splunk detection engineering: distinct-count (`dc()`) aggregation, failure/success correlation in a single search, time-span signature derivation, threshold tuning to the alerting window
+- Wazuh frequency-rule authoring: chaining a custom rule off a stock aggregator (`if_matched_sid`), `different_field` distinct-user matching, MITRE-tagged rule, validation via `wazuh-logtest` before load
+- Stock-ruleset analysis — reading `0580-win-security_rules.xml` to diagnose a rule-tree collision instead of trial-and-error restarts
+- Loud-vs-low-and-slow evasion analysis: deliberately defeating a working threshold detection and rebuilding for the patient adversary
+- Streaming-engine vs. search-engine architectural comparison (Wazuh frequency window vs. Splunk arbitrary-range distinct count)
+- False-positive reasoning: distinguishing a spray from a password-reset storm, and the alarm-flooding camouflage threat
+- Dual-SIEM detection of one attack through two independent pipelines, with documented tradeoffs
+- Methodical, source-out troubleshooting and honest, continuous documentation throughout
+
+---
+
+## Employer-Relevant Skills
+
+**Tools:** Splunk Enterprise (SPL, `stats`, `dc()`, `eval`, correlation searches, time-range tuning), Wazuh (custom rules, frequency/`if_matched_sid` chaining, `different_field`/`same_field`, `wazuh-logtest`, `local_rules.xml`), kerbrute, Active Directory / Windows Security auditing, PowerShell, Kali Linux, VMware Workstation Pro
+
+**Concepts:** password-spray detection, behavioral/frequency detection, threshold-and-time-window tuning, failure/success correlation, low-and-slow evasion, false-positive triage (spray vs. reset storm), Kerberos authentication telemetry (4771/4768), streaming-vs-search SIEM architecture, account lockout policy and its detection implications, MITRE mapping in-rule
+
+**Frameworks:** MITRE ATT&CK (T1110.003 — Password Spraying), Splunk Common Information Model
+
+---
+
+## SOC Relevance
+
+Password spraying is one of the single most common things a Tier 1/Tier 2 analyst actually triages — it's the bread-and-butter foothold technique, and the alert almost always lands as a pile of Windows authentication failures that the analyst has to read *as a pattern*. This exercise is that work end to end: separating an attack from ordinary failed-login noise, separating a spray from a benign reset storm, surfacing the one compromised account out of the crowd, and — the part most labs skip — recognizing when a *patient* attacker has slipped under a threshold rule entirely. The judgment calls here are the daily reality of the queue: is this an incident or noise, which account actually got in, and does my detection even see this if the adversary slows down? An analyst who already understands why a frequency rule goes silent against a low-and-slow spray, or why the same attack shows up in one SIEM and not the other, resolves that in minutes instead of escalating a blind spot they didn't know they had.
+
+---
+
+## What's Next
+
+This is the foothold; the series follows the intrusion forward from here.
+
+- **Kerberoasting** (MITRE T1558.003) — the credential-access escalation after the foothold, already published in this series: behavioral detection of an AES-only roast across both SIEMs.
+- **Lateral movement** — the capstone: moving across the domain once you're in, with live endpoint hunting.
+
+And two open threads specific to *this* detection, both flagged in the scope note:
+
+- A **Wazuh composite rule** that ties the 4768 success to the spray source the way the Splunk search does — Wazuh names the burst today, but not yet the victim.
+- A **stateful, long-window approach** for Wazuh to catch the low-and-slow spray its frequency engine is currently blind to — the streaming-engine gap this writeup makes concrete.
+
+That's where this stops being a detection I wrote and becomes one I can defend against an adversary who isn't in a hurry.
 
 ---
 
@@ -328,10 +374,3 @@ index=* host=WIN-CBG93HEA6LI (EventCode=4771 OR EventCode=4768)
 ```
 
 **Scope note:** the Wazuh rule chains off stock frequency rule 60205 (8 failures from one source in 240 seconds) and adds the distinct-user condition — so it's high-fidelity against a *loud* spray and, by design, **blind to a low-and-slow spray** that stays under that frequency. That blindness isn't a defect to hide; it's the architectural finding of this piece. The Splunk searches catch the slow case because a search engine can count distinct values over an arbitrary window; a streaming rule engine can't. Two open threads for a future iteration: a Wazuh composite rule that ties the 4768 success to the spray source (Splunk does this; Wazuh doesn't yet), and a stateful long-window approach to catch the slow spray Wazuh currently misses. Catching the loud and the lazy with near-zero false positives is the right *first* deliverable; the robust next tier is behavioral baselining of distinct-users-per-source over time.
-
----
-
-## Author
-
-[Malakh Fuller](https://www.linkedin.com/in/malakhfuller/) · [GitHub](https://github.com/MalakhFuller)
-
