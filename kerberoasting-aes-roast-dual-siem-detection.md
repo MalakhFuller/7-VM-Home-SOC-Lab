@@ -3,6 +3,7 @@
 *Part of an ongoing detection-engineering series — each entry takes one intrusion technique end to end through two SIEMs. This one is Kerberoasting, the credential-access move an attacker reaches for after gaining a foothold in the domain.*
 
 **Completed:** 2026-06-21
+
 **Author:** Malakh Fuller
 
 > **Privacy note:** Internal lab IP addresses have been anonymized in this writeup and related screenshots. All testing was performed exclusively on my own isolated home lab network, against accounts I created specifically to be attacked.
