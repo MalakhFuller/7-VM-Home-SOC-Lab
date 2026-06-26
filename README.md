@@ -15,7 +15,8 @@ The work follows an intrusion the way it actually unfolds: build the instrument 
 1. **[The Lab Buildout](./soc-lab-infrastructure-buildout.md)** — the dual-SIEM + network-IDS environment everything else runs on. It's the foundation the rest builds on; start here.
 2. **[Password Spraying a No-Lockout Domain](./password-spraying-dual-siem-detection.md)** — the initial foothold. Catching a loud spray in both SIEMs, then defeating those same detections with a low-and-slow spray that exposes where each SIEM's architecture wins and loses — including telling a real spray apart from a Monday-morning password-reset storm (MITRE ATT&CK [T1110.003](https://attack.mitre.org/techniques/T1110/003/)).
 3. **[Kerberoasting on an AES-Only Domain](./kerberoasting-aes-roast-dual-siem-detection.md)** — credential access after a foothold. Why the textbook RC4 detection is blind on a hardened Server 2025 domain, and the behavioral rule that catches it in both SIEMs (MITRE ATT&CK [T1558.003](https://attack.mitre.org/techniques/T1558/003/)).
-4. **Lateral Movement** — _planned_ — the capstone: moving across the domain once you're in.
+4. **[Privilege Escalation Without an Exploit](./privilege-escalation-acl-chain-dual-siem-detection.md)** — the climb after the foothold. Walking an ACL-abuse chain — full control over a service account, to a password-reset takeover, to a DCSync of the krbtgt hash — with no exploit anywhere, then catching each stage across both SIEMs and the network sensor. The detection problem here is *attribution, not failure*: every action is authorized, so you watch which principal did a normal thing — including one honest collection gap where one SIEM can't see the recon at all (MITRE ATT&CK [T1098](https://attack.mitre.org/techniques/T1098/) / [T1003.006](https://attack.mitre.org/techniques/T1003/006/)).
+5. **Lateral Movement** — _planned_ — the capstone: moving across the domain once you're in.
 
 Each writeup is self-contained and built for two readers: a narrative with the reasoning and the dead ends left in, then a copy-paste **reference appendix** with the working detections and a scope note on what they do and don't catch. Read the story if you're evaluating how I think; jump to the appendix if you just need the rule.
 
@@ -43,8 +44,8 @@ All seven VMs sit on an isolated `10.10.10.0/24` segment. Telemetry from the thr
 
 Three things, and they're the three I'd want to be asked about:
 
-- **Dual SIEM.** Wazuh and Splunk running side by side against identical telemetry. Same events, two platforms, so I can build the same detection twice and learn where each tool thinks differently.
-- **One sensor, two sets of eyes.** A passive Suricata IDS sniffing the wire in promiscuous mode, with its alerts shipped into *both* SIEMs — verified end-to-end with a real nmap detection, not assumed from a status light.
+- **Dual SIEM.** Wazuh and Splunk running side by side against identical telemetry. Same events, two platforms, so I can build the same detection twice and learn where each tool thinks differently — including the stages where one SIEM catches an attack the other one structurally can't see.
+- **One sensor, two sets of eyes.** A passive Suricata IDS sniffing the wire in promiscuous mode, with its alerts shipped into *both* SIEMs — verified end-to-end with a real nmap detection, not assumed from a status light. By the privilege-escalation piece, that independent wire view is the only thing that catches recon the host logs nearly buried.
 - **Hand-mapped CIM.** Instead of installing a vendor add-on to normalize Suricata's data, I wrote the mapping myself — field aliases, EVAL logic, eventtype and tag definitions, the cross-app metadata export — and validated it against Splunk's live Common Information Model spec until the Intrusion Detection data model claimed my sensor's events as its own. That's the difference between data being *present* and data being *usable*, and I wanted to understand it from the inside rather than trust a black box.
 
 ---
@@ -58,12 +59,14 @@ The full list is in each writeup, but these are the ones I'll carry into a real 
 - **The absence of an error is information.** Empty-and-not-complaining means a process never *tried* — which points somewhere different than a process that tried and failed.
 - **Verify the wire before you trust the wire.** One `tcpdump` command, run before I built anything, was the foundation the whole sensor build stood on.
 - **Verify prior-session assumptions against live reality.** What's true in your notes can be false on the box. The live error wins, every time.
+- **Behavioral beats signature in a hardened environment.** The textbook detections key on artifacts the modern OS is retiring — a cipher type, a failed logon. On a current domain they go quiet. Match the attacker's *behavior* and the request's shape instead.
+- **When the attack is authorized activity, detection becomes attribution.** Privilege escalation by ACL abuse never breaks anything — a normal reset, a normal replication. Nothing fails, so you stop watching for errors and start watching *which principal* did the normal thing. Loud is not the same as detectable; volume is the wrong axis, the actor is the right one.
 
 ---
 
 ## What's next
 
-The instrument is built and verified, and the attacks are underway. Password spraying and Kerberoasting (above) are both run through it end to end — each ending in custom detection rules written in both SIEMs, including the contrast between a loud attack and a patient one. Lateral movement is next, building toward a full purple-team capstone with a real incident report.
+The instrument is built and verified, and the attacks are underway. Password spraying, Kerberoasting, and privilege escalation (above) are all run through it end to end — each ending in custom detection rules written in both SIEMs, from the contrast between a loud spray and a patient one to an ACL-abuse chain caught at every stage it leaves a trace. Lateral movement is next, building toward a full purple-team capstone with a real incident report.
 
 That's where this lab stops being a thing I built and starts being a thing I can defend — attack by attack, detection by detection.
 
