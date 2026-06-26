@@ -104,6 +104,7 @@ The `-k -no-pass` is the move that walks past the RC4 wall — it authenticates 
 The hash came back beginning `$krb5tgs$18$`. That `18` matters: it's the encryption-type number for AES256. The 2019 tutorials produce a `$krb5tgs$23$` — type 23, RC4. I had an AES roast, which meant the easy crack was off the table and the easy *detection* was about to be off the table too.
 
 ![Kali terminal: the recovered service-ticket hash beginning $krb5tgs$18$svc_sql$SOCLAB.LOCAL](screenshots/01_cat-kerberoast-hash.jpg)
+<br>
 *The recovered ticket — `$krb5tgs$18$`. The `18` is AES256; every 2019 tutorial produces a `$krb5tgs$23$` (RC4). The cipher alone tells you the easy path is gone.*
 
 ---
@@ -135,6 +136,7 @@ hashcat -m 19700 -a 0 kerberoast.hash rockyou.txt -r year.rule
 That one-line rule capitalizes each word and appends `2024!` — turning rockyou's plain `summer` into `Summer2024!` on the fly. It cracked at **0.50% of the wordlist** (`Progress: 71680/14344384`). "summer" sits near the top of the list, so a real attacker has this in under a second.
 
 ![hashcat output: Status Cracked, mode 19700, Summer2024! recovered at 0.50% of rockyou, ~1.3M H/s](screenshots/02_hash-cracked.jpg)
+<br>
 *Cracked at 0.50% of rockyou with a single mutation rule — `Summer2024!`. The run clocks ~1.3M H/s on the 5070 Ti: the full AES "tax," and it bought nothing against a Season-Year-symbol password.*
 
 Read those two passes together and the thesis lands: **the control was never the cipher — it was the password.** The 1,000×-harder AES math bought the defender exactly nothing the moment the password was a predictable Season + Year + symbol. The real fixes have nothing to do with encryption type: a group-managed service account (gMSA), or a 25+ character random password that no mutation rule will ever reach. The encryption upgrade is a speed bump; the password policy is the wall.
@@ -152,9 +154,11 @@ My roast came back **`0x12` (AES256)**. So the textbook rule sails right past it
 It gets worse — or more interesting — when you look at the baseline. When I pulled the same account's *benign* historical activity, the harmless request was the one carrying `0x17` (RC4), because at the time it was logged the account hadn't been hardened yet. My **attack** drew AES; my **routine baseline** drew RC4. The hardening *inverts the signal*. A shop running the textbook rule would get paged for a harmless klist from last week and hear nothing about the real roast. Watching the cipher is now exactly the wrong instinct.
 
 ![DC Security event 4769 for the attack: jsmith, svc_sql, source ::ffff:10.10.10.128, ticket options 0x40810010, encryption 0x12, advertised etypes RC4 and DES first](screenshots/03_6-21-attack.jpg)
+<br>
 *The attack (6/21): ticket options `0x40810010`, encryption `0x12` (AES), source `::ffff:10.10.10.128`, advertised etypes leading with RC4 and DES — the tool's downgrade fingerprint.*
 
 ![DC Security event 4769 baseline: WinServer-DC01$, svc_sql, source ::1, ticket options 0x40810000, encryption 0x17, advertised etypes AES first](screenshots/04_6-19-baseline.jpg)
+<br>
 *The benign baseline (6/19), same account: `0x40810000`, encryption `0x17` (RC4), source `::1`, advertised etypes leading with AES. The harmless event is the one a cipher-based rule would page on — the signal is inverted.*
 
 So where *does* the attack announce itself? Three places, none of them the encryption type:
@@ -183,6 +187,7 @@ index=* host=WIN-CBG93HEA6LI EventCode=4769 svc_sql
 The table came back clean: one row, `jsmith / svc_sql / 10.10.10.128 / 0x40810010 / 0x12`. That row is the detection surface. Now the two searches that make the whole point.
 
 ![Splunk statistics table: one row, jsmith@SOCLAB.LOCAL, svc_sql, ::ffff:10.10.10.128, 0x40810010, 0x12](screenshots/05_Splunk-output.jpg)
+<br>
 *Splunk parsed every field cleanly — the single-row detection surface for the roast.*
 
 **The textbook rule, run against an attack I'm staring at:**
@@ -196,6 +201,7 @@ index=* EventCode=4769 svc_sql Ticket_Encryption_Type=0x17
 The standard Kerberoasting signature, pointed directly at a roast I had open in another tab, returns nothing. A SOC running that rule and only that rule gets paged for nothing while a service-account password walks out the door. That empty result screen is one of the most important artifacts in this whole writeup — it's the evasion demonstrated, not asserted.
 
 ![Splunk search for EventCode 4769 svc_sql Ticket_Encryption_Type=0x17 returning 0 events](screenshots/06_Splunk-output2.jpg)
+<br>
 *The textbook RC4 signature run against a roast I had open in the next tab: `0 events`.*
 
 **The behavioral rule, watching the tool instead of the cipher:**
@@ -207,11 +213,13 @@ index=* EventCode=4769 Ticket_Options=0x40810010
 > **2 events.**
 
 ![Splunk events view: 2 events matching Ticket_Options=0x40810010 at 11:07:25.052 and .041, host WIN-CBG93HEA6LI](screenshots/07_Splunk-output3.jpg)
+<br>
 *The behavioral search on the tool's `0x40810010` fingerprint — two events, 11 ms apart.*
 
 Two, not one — and the second is a gift. I deliberately did *not* scope this to `svc_sql`, to make the point that you don't need to know which account was targeted; the tool's own behavior surfaces the attack. Tabling the two rows showed `svc_sql` on one and `WIN-CBG93HEA6LI$` — the DC's own machine account — on the other, eleven milliseconds apart (`11:07:25.041` and `.052`). The second ticket is the one Impacket grabbed to authenticate to the DC's LDAP service over Kerberos for the `-k` run; services on the DC live under its machine account. So the burst decodes cleanly: one workstation, one user, pulling a ticket *to the domain controller* and a ticket *to a service account* in the same breath, both wearing the tool's `0x40810010` options. That shape — and the sub-second timing no human or app produces — is about as Kerberoasting-as-it-gets, and the RC4 rule sees none of it.
 
 ![Splunk table: two rows, svc_sql at .052 and WIN-CBG93HEA6LI$ at .041, both jsmith from ::ffff:10.10.10.128, encryption 0x12](screenshots/08_Splunk-output4.jpg)
+<br>
 *Both tickets in one table: `svc_sql` (the roast, `.052`) and `WIN-CBG93HEA6LI$` (the DC's own LDAP auth, `.041`) — same user, same Kali source, 11 ms apart. That two-ticket burst is the behavioral signature.*
 
 That's the Splunk half, proven end to end: event confirmed at the source, classic rule blind, behavioral rule catching the entire tool session. One SIEM down. The second one is where I lost most of a day.
@@ -299,6 +307,7 @@ sudo grep '"id":"100100"' /var/ossec/logs/alerts/alerts.json | grep windows_even
 Two. The `svc_sql` roast and the DC machine-account ticket, the same 11-millisecond pair Splunk caught, now firing a level-12 alert with the live values rendered into the description: *Possible Kerberoasting — Impacket TGS request for svc_sql from ::ffff:10.10.10.128.* The same dashboard that had shown me "no results match" for hours finally lit up with a detection I'd written.
 
 ![Wazuh Threat Hunting dashboard: rule.id 100100, 2 hits at level 12, descriptions for svc_sql and WIN-CBG93HEA6LI$ from ::ffff:10.10.10.128, agent WinServer-DC01](screenshots/09_Wazuh-victory.jpg)
+<br>
 *Rule 100100 firing — two level-12 alerts in the same Wazuh dashboard that returned "no results" for hours. `svc_sql` and the DC machine account, both from `::ffff:10.10.10.128`.*
 
 One piece of honesty I owe the reader, because the alternative is the polished lie I promised to avoid: the fix that worked changed **two** things at once — the anchor (to `60103`) *and* the matched field (to `ticketOptions`). So I can't cleanly claim which one was the culprit. The evidence points hard at the `eventID` match, since stock `60106` leans on that same field and is equally silent — but I didn't isolate it with a controlled single-variable test, and "I'm fairly sure but I didn't prove it" is the honest state. Isolating why `win.system.eventID` won't match these eventchannel events is an open thread I'll chase in a follow-up. A working detection and an unproven hypothesis is a real place to be; pretending otherwise would just teach someone the wrong lesson.
