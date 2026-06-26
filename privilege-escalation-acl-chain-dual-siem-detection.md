@@ -94,7 +94,9 @@ nxc ldap WIN-CBG93HEA6LI.soclab.local -u areyes -k --use-kcache
 ```
 
 ![Kali terminal: nxc ldap authenticated bind as areyes over Kerberos against the signing-enforced DC, areyes from ccache](screenshots/01_kali-enumerating-over-authenticated-LDAP-using-NetExec-with-Kerberos.jpg)
+
 *Authenticated LDAP bind as `areyes` over Kerberos. `signing:Enforced` is why this needs a properly sealed channel — the legacy unsigned tools get refused here.*
+
 
 Now the part I'm keeping in because it's the realest thing in the writeup. My *first* chain design didn't go through `svc_sql` at all. It went through a delegated help-desk group called `IT-Support`: give `areyes` full control over that group, drop `areyes` into it, and inherit the group's privileges. I built it, walked away, came back — and the ACL was *gone*. Rebuilt it. Gone again within the hour. No error, no log of a removal I'd done, just an permission that refused to stay put.
 
@@ -105,7 +107,9 @@ nxc ldap WIN-CBG93HEA6LI.soclab.local -u areyes -k --use-kcache --query "(cn=IT-
 ```
 
 ![Kali terminal: targeted LDAP query on IT-Support showing memberOf CN=Administrators and adminCount 1](screenshots/02_kali-discovery-phase-is-complete.jpg)
+
 *The `IT-Support` object: `memberOf: CN=Administrators` and — the line that explains everything — `adminCount: 1`. The group was nested in Administrators, which made it a protected object, which is why my ACL kept evaporating.*
+
 
 `adminCount: 1` and membership in `Administrators` meant `IT-Support` was a **protected object**, and Active Directory has a quiet janitor for protected objects called **SDProp**, the process behind AdminSDHolder. Roughly once an hour, SDProp re-stamps every protected principal's ACL back to a locked template, wiping any custom permission someone (me, or an attacker) added. It exists precisely to stop the move I was attempting — you can't durably backdoor a group that's in Administrators, because the directory keeps healing it. That's not a bug I hit; that's a *defensive control working*, and I'd never have understood it as a concrete thing rather than an exam term if it hadn't silently eaten my ACL twice.
 
@@ -144,12 +148,16 @@ impacket-secretsdump -k -no-pass -dc-ip 10.10.10.134 -just-dc-user krbtgt \
 ```
 
 ![Kali terminal: impacket-secretsdump using the DRSUAPI method, dumping the krbtgt NTLM hash and AES256/AES128 Kerberos keys](screenshots/03_kerberos-key-granted.jpg)
+
 *DCSync via `secretsdump`, using the DRSUAPI replication method. The `krbtgt:502:` NTLM hash and the AES256/AES128 Kerberos keys come back — the master key to the domain. This is the result you cannot remediate with a password reset; rotating krbtgt takes two careful resets and a domain-wide ticket purge, and until you do, every forged "golden" ticket stays valid.*
+
 
 Before trusting any SIEM to render this, I confirmed it at the source — the same discipline I'd apply to any single report. On the DC, the replication request lands as Security event **4662**, the one that records directory-object access against the replication GUIDs:
 
 ![DC PowerShell: Get-WinEvent for event 4662 filtered on Replicating Directory Changes and GUID 1131f6aa, showing svc_sql as the requesting account](screenshots/04_svc_sql-requesting-replication-is-malicious.jpg)
+
 *The primary record on the DC: event 4662 carrying the replication-changes GUID, requested by `svc_sql`. Every other row is the DC's own machine account (`WIN-CBG93HEA6LI$`) doing legitimate, scheduled replication. The single `svc_sql` row is the attack — a service account asking to replicate the directory, which it has no earthly reason to do.*
+
 
 That last screenshot *is* the detection thesis, sitting in the raw log before any SIEM touches it: the malicious event and the benign events are the **same event type**. The only thing that separates them is who's asking. Hold that line — *a service account requesting replication is the anomaly, not the request itself* — because everything in the detection half hangs off it.
 
@@ -178,7 +186,9 @@ nxc ldap WIN-CBG93HEA6LI.soclab.local -u areyes -k --use-kcache --users --groups
 ```
 
 ![Kali terminal: full NetExec LDAP enumeration dumping all 32 domain users, all groups, and all computers](screenshots/10_textbook_loud_enumeration.jpg)
+
 *Textbook loud enumeration — 32 users, every group, every computer, in one burst. On paper this should light up any detection. In practice it almost lit up nothing, and the reason is the trap of this whole stage.*
+
 
 Here's the trap. The intuitive detection is *volume*: "a host pulling hundreds of LDAP objects is enumerating, alert on it." I built that instinct and it failed immediately, because my perfectly innocent Win11 workstation — doing normal domain-member things, group policy, name resolution, the usual — generates **more** raw LDAP traffic than the attacker's sweep does. A volume threshold tuned to catch `areyes` pages constantly on `DESKTOP-6H1BPIU` doing nothing wrong. **Loud is not the same as detectable.** Volume is the wrong axis; you need *attribution* — who ran a query shaped like enumeration — not a count.
 
@@ -190,14 +200,18 @@ index=* host=suricata-sensor01 event_type=ldap src_ip=10.10.10.128
 ```
 
 ![Splunk: Suricata LDAP events from 10.10.10.128 to the DC, 22 bind_request and 10 search_request operations](screenshots/11_Splunk-detected-loud.jpg)
+
 *Suricata on the wire: the attacker's session to the DC broken out by LDAP operation — 22 binds, 10 searches. The network sensor sees the full shape of the session even when the host's default logs stay quiet. This is the value of an independent network vantage point: it doesn't depend on Windows being configured to talk.*
+
 
 Second, the host — but only after turning on telemetry that's off by default. Windows can log the *content* of LDAP queries as Directory Service event **1644**, but it's disabled until you set the NTDS diagnostics registry values (`15 Field Engineering = 5`, plus the expensive/inefficient-search thresholds). I enabled it, and immediately hit a smaller version of this lab's oldest ghost: the events were being *written* on the DC but not *forwarded* — the Splunk Universal Forwarder wasn't subscribed to the Directory Service channel until I added it to `inputs.conf`. Audit-enabled is not audit-collected; you have to confirm the event actually arrives, not just that it exists.
 
 Once it flowed, the 1644 event carries the enumeration fingerprint in plain text — the `sAMAccountType` filter that a user-enumeration sweep always sends (`805306368` for users, `805306369` for computers):
 
 ![Splunk: raw 1644 event showing LDAP filter sAMAccountType=805306368, 32 visited entries, and User SOCLAB\areyes](screenshots/12_areyes-named-and-identified.jpg)
+
 *The raw 1644: an LDAP search filtered on `sAMAccountType=805306368` (all user accounts), 32 entries visited, and crucially the `User:` field — `SOCLAB\areyes`. The host log names the attacker. That's the attribution the volume approach could never give me.*
+
 
 And the detection that turns that into an answer — not "how much LDAP," but "who ran the enumeration-shaped query":
 
@@ -209,7 +223,9 @@ index=* host=WIN-CBG93HEA6LI EventCode=1644 ("805306368" OR "805306369")
 ```
 
 ![Splunk: the 1644 detection naming client 10.10.10.128 and account SOCLAB\areyes out of the noise](screenshots/13_Splunk-host-side-enumeration-detection.jpg)
+
 *The host-side detection: `SOCLAB\areyes` from `10.10.10.128`, pulled out by the account-type filter that legitimate clients don't send in that shape. Attribution, not volume — the query names the attacker out of a haystack the Win11 box would otherwise bury.*
+
 
 **And the honest gap.** This is where the two SIEMs split hard. Splunk's forwarder happily collects the Directory Service channel once configured. The **Wazuh agent will not** — and I want to be precise about how hard I tried, because "it didn't work" without the receipts is worthless. Six-plus attempts: confirmed the agent service was running, confirmed the exact channel name Windows uses (`Directory Service`, verified via `Get-WinEvent -ListLog`), added it to `ossec.conf` as a `<localfile>` with the `eventchannel` format, added an explicit `<query>` filter for EventID 1644, did clean stop/start cycles, re-fired fresh enumeration each time. The archive (`archives.json`) stayed empty every single time. The Wazuh Windows agent on this version simply does not ship that channel the way the Splunk forwarder does.
 
@@ -224,7 +240,9 @@ The takeover fires Security event **4724** — "an attempt was made to reset an 
 Splunk parses both. Pulling 4724s with their actor and target showed exactly two rows, and the contrast between them is the rule:
 
 ![Splunk: 4724 events, one row areyes resetting areyes (self), one row areyes resetting svc_sql](screenshots/14_Splunk-areyes-reset-svc_sql-password.jpg)
+
 *Two resets. `areyes → areyes` is a user resetting their own password — benign, ignore it. `areyes → svc_sql` is a regular user resetting a **service account's** password — that's the takeover. The detection is the difference between the two: actor ≠ target, and the target is something a normal user has no business resetting.*
+
 
 One field-name lesson cost me a few minutes and is worth passing on. A quick `stats` showed the right values but my first `where` clause returned nothing, because Splunk's `stats` had folded both names into a single multi-value `Account_Name` field. The properly parsed fields are `Subject_Account_Name` (the actor) and `Target_Account_Name` (the target) — read the raw event for the real field names before you filter on them, every time:
 
@@ -257,10 +275,14 @@ I'd seen this exact failure before. In the Kerberoasting build, a `<field name="
 Restart, one fresh reset, and it fired — twice, in fact, because the takeover also throws a 4738 ("account changed") alongside the 4724, and both carry `targetUserName: svc_sql`, so the rule surfaces the full reset signature:
 
 ![Wazuh dashboard: rule.id 100400, 2 level-12 alerts, Top MITRE ATT&CKS donut showing Account Manipulation, agent WinServer-DC01](screenshots/15_wazuh_dashboard.jpg)
+
 *Rule 100400 firing in Wazuh: two level-12 alerts mapped cleanly to **Account Manipulation** (T1098). The 0/0 on authentication failure/success is itself a tell — this is account management, not an auth event, which is exactly why a failed-logon rule never sees it.*
 
+
 ![Wazuh events: two hits, WinServer-DC01, "Possible ACL abuse - password reset of svc_sql by areyes", level 12, rule 100400](screenshots/16_wazuh_events.jpg)
+
 *The events view: the live attacker named in the description — `password reset of svc_sql by areyes`. The rule renders the actor and target into the alert, so an analyst sees the relationship, not just an event code.*
+
 
 The recurring finding — and a complication I only caught while assembling this writeup, which is exactly why it's in here. On two techniques now (this 4724 reset and the earlier 4769 Kerberoast), a `win.system.eventID` match on `windows_eventchannel` events refused to fire, and the cure both times was to drop it and anchor on `60103` with `eventdata` field matching. That looked like a clean rule: *"the eventID match is broken, stop using it."* Then I went to pull my live DCSync rule for this appendix and found it **keeps** a `win.system.eventID` match on its 4662 — and fires anyway. So the tidy theory is wrong. The eventID match isn't universally broken; it fails on some event types and works on others, and I don't yet know what separates them. The honest version is: when an eventID match silently fails, switch to `eventdata` matching — it has rescued two rules — but I can't claim the match is dead across the board, because one of my own rules disproves it. A workaround I trust, sitting on top of a root cause I still haven't isolated.
 
@@ -278,7 +300,9 @@ index=* host=WIN-CBG93HEA6LI EventCode=4662 ("1131f6aa" OR "1131f6ad")
 ```
 
 ![Splunk: 4662 replication events grouped by account, WIN-CBG93HEA6LI$ with 16 and svc_sql with 3](screenshots/05_Splunk-detection-basics.jpg)
+
 *Raw replication activity by account: the DC's own machine account (`WIN-CBG93HEA6LI$`, 16) doing its legitimate scheduled job, and `svc_sql` (3) doing the thing a service account should never do. Both are real 4662s; only one is an attack.*
+
 
 The detection is the filter that encodes the principle — drop the machine accounts (the ones that *should* replicate) and whatever's left is the anomaly:
 
@@ -289,20 +313,28 @@ index=* host=WIN-CBG93HEA6LI EventCode=4662 ("1131f6aa" OR "1131f6ad")
 ```
 
 ![Splunk: same query with machine accounts excluded, leaving only svc_sql](screenshots/06_Splunk-Dsync-detection-rule-working.jpg)
+
 *Machine accounts excluded (`\$$` matches the trailing `$` every machine account carries), and the noise collapses to a single row: `svc_sql`. The rule doesn't need to know the attack in advance — it only needs to know which accounts are *allowed* to replicate, and flag everything else.*
+
 
 A field-vs-raw note worth keeping, because the two SIEMs store this differently. In Splunk the replication GUID lives in the raw message text, so a bare-term match (`"1131f6aa"`) is the right tool. In Wazuh, the decoder parses that same GUID into a structured field (`win.eventdata.properties`), so the rule matches the field, not free text. Same IOC, two access patterns — and knowing which tool stores it which way is the difference between a rule that fires and an evening wondering why it doesn't.
 
 The Wazuh rule (`100300`) fires at **level 14** — the highest in this series so far, because full-domain credential theft earns it:
 
 ![Wazuh: jq output of rule 100300 firing at level 14, description naming svc_sql, MITRE DCSync](screenshots/07_wazuh-Dsync-json-rule-100300-fired.jpg)
+
 *Rule 100300 in the alert ledger: level 14, `Possible DCSync - directory replication requested by non-machine account svc_sql`, mapped to DCSync. Pulled straight from `alerts.json` — the manager's own record, not the dashboard.*
 
+
 ![Wazuh dashboard: rule.id 100300, 3 level-14 alerts, Top MITRE ATT&CKS donut showing DCSync](screenshots/08_Wazuh-dashboard.jpg)
+
 *The dashboard view: three level-14 alerts, the MITRE donut reading **DCSync**. Same custom-rule-into-native-framework mapping as the rest of the series, now for the crown of the chain.*
 
+
 ![Wazuh events: 3 hits, WinServer-DC01, "Possible DCSync - directory replication requested by non-machine account svc_sql", level 14, rule 100300](screenshots/09_wazuh-events.jpg)
+
 *The events view: three hits, the description naming `svc_sql` as the non-machine account that asked to replicate. The detection that catches total domain compromise, firing in the rule-driven SIEM.*
+
 
 Three stages, and the dual-SIEM coverage map comes out honest: **DCSync** and the **password reset** are caught in *both* SIEMs; the **enumeration** is caught at **Splunk + Suricata** with a documented **Wazuh collection gap**. That's not a clean sweep, and a clean sweep would have been a lie.
 
